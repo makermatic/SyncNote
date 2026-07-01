@@ -534,6 +534,18 @@ Rollback (if still flaky): `git checkout b8b68a9 -- SyncNote.js` for v0.8.0 link
 
 ---
 
+## 20. Implementation log — v0.8.3 (back to links, by choice)
+
+The GC pin (v0.8.2) **did fix** the dying clicks — confirmed in live testing. The user still chose to roll navigation back to links: even working, card-wide click filters *feel* unreliable, and links are handled natively by QLabel with zero GC/propagation caveats. Design lesson worth keeping: **prefer `linkActivated` links over event-filter click targets in Harmony UIs** — filters are for the cases links can't cover (keys in a QTextEdit).
+
+v0.8.3 = v0.8.0's navigation (green clickable `Frame 009` header + `Sub N` links) combined with everything learned since:
+- selectable/copyable note text (kept),
+- GC keep-alive pinning (kept — the Enter filters still need it),
+- scroll preservation and scrub buttons (kept),
+- the card-wide click filter (`makeClickFilter`) removed entirely.
+
+---
+
 ## Sources
 - column class (getEntry/setEntry/getElementIdOfDrawing/add/getDrawingTimings): https://docs.toonboom.com/help/harmony-22/scripting/script/classcolumn.html
 - element class (add/id/getNameById/physicalName): https://docs.toonboom.com/help/harmony-22/scripting/script/classelement.html
