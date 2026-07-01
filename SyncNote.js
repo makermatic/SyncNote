@@ -6,7 +6,7 @@
  * What it does:
  *   - On launch, finds (or creates) a "Notes" drawing layer and connects it
  *     to the scene's top Composite so it renders over everything.
- *   - "Add Note @ Frame" creates a drawing substitution at the playhead; each
+ *   - "Add Note" creates a drawing substitution at the playhead; each
  *     substitution group has its own text field for adding dated notes.
  *   - Notes are stored INSIDE the scene (scene metadata), keyed by element ID +
  *     drawing name, so renaming the layer/scene never orphans them.
@@ -26,7 +26,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.6.1";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.7.0";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -54,6 +54,7 @@ function SyncNote() {
       return;
     }
     var connectStatus = attachToComposite(layer.node); // wire into render + report
+    logPortMap(); // backburner diagnostics for the front-port issue -> Message Log
 
     model.syncNoteElementId = layer.elementId;
     saveModel(model);
@@ -549,10 +550,9 @@ function SyncNote() {
     var toolbarW = new QWidget();
     var bar = new QHBoxLayout(toolbarW);
     bar.setContentsMargins(0, 0, 0, 0);
-    var addBtn = new QPushButton("Add Note @ Frame " + frame.current());
-    var refreshBtn = new QPushButton("Refresh");
+    var addBtn = new QPushButton("Add Note");
+    addBtn.toolTip = "Create a substitution at the current playhead frame";
     addW(bar, addBtn, 1);
-    addW(bar, refreshBtn);
     addW(outer, toolbarW);
 
     // ---- scrolling list (QScrollArea expands by default -> fills window) ----
@@ -578,14 +578,13 @@ function SyncNote() {
 
     function refresh() {
       clearLayout(listLayout);
-      addBtn.text = "Add Note @ Frame " + frame.current();
 
       var groups = collectGroups(layer, model);
       for (var i = 0; i < groups.length; i++) {
         addW(listLayout, makeGroupWidget(groups[i]));
       }
       if (groups.length === 0) {
-        var hint = new QLabel("No notes yet.\nMove the playhead and click “Add Note @ Frame”.");
+        var hint = new QLabel("No notes yet.\nMove the playhead and click “Add Note”.");
         hint.wordWrap = true;
         addW(listLayout, hint);
       }
@@ -594,59 +593,91 @@ function SyncNote() {
       addW(listLayout, new QWidget(), 1);
     }
 
-    // One substitution group: header + notes + inline adder.
+    // One substitution group: clickable frame header + notes + inline adder.
+    // The FRAME is the group's identity (what students care about); the sub
+    // number is shown as metadata on each note card instead.
     function makeGroupWidget(group) {
       var drawingName = group.drawing;
       var frameNo = group.frame;
 
-      var box = new QGroupBox();
-      box.title = "drawing " + drawingName;
+      var box = new QFrame();
+      box.frameShape = QFrame.StyledPanel;
       var v = new QVBoxLayout(box);
 
-      // Green clickable "Frame ####" link (like SyncSketch) -> jump playhead.
+      // Header: green, clickable "Frame 009" (padded to scene length digits).
       if (frameNo > 0) {
-        var frameLink = new QLabel(
-          '<a href="#" style="' + LINK_STYLE + '">Frame ' + pad(frameNo, 4) + "</a>");
-        frameLink.toolTip = "Go to frame " + frameNo;
-        frameLink.linkActivated.connect(makeJump(frameNo));
-        addW(v, frameLink);
+        var head = new QLabel(
+          '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
+          padFrame(frameNo) + "</a>");
+        head.toolTip = "Go to frame " + frameNo;
+        head.linkActivated.connect(makeJump(frameNo));
+        addW(v, head);
       } else {
-        addW(v, new QLabel("(not exposed on timeline)"));
+        var deadHead = new QLabel("(not exposed on timeline)  •  Sub " + drawingName);
+        deadHead.styleSheet = "color: gray;";
+        addW(v, deadHead);
       }
 
       // Existing notes.
       var notes = notesFor(model, layer.elementId, drawingName);
       for (var i = 0; i < notes.length; i++) {
-        addW(v, makeNoteCard(drawingName, frameNo, notes[i]));
+        addW(v, makeNoteCard(drawingName, notes[i]));
       }
 
-      // Inline "add note to this drawing" row.
+      // Inline "add note" row: multiline box that wraps and grows.
+      // Enter submits; Shift+Enter inserts a newline (Discord/Slack-style).
       var addRowW = new QWidget();
       var addRow = new QHBoxLayout(addRowW);
       addRow.setContentsMargins(0, 0, 0, 0);
-      var input = new QLineEdit();
-      input.placeholderText = "Add a note…";
+      var input = new QTextEdit();
+      try { input.placeholderText = "Add a note…  (Enter = save, Shift+Enter = new line)"; }
+      catch (e) { /* placeholder not bound in some engines; cosmetic */ }
+      sizeNoteInput(input);
       var noteBtn = new QPushButton("Add");
       addW(addRow, input, 1);
       addW(addRow, noteBtn);
       addW(v, addRowW);
 
       function commit() {
-        var txt = input.text;
-        if (txt && txt.replace(/^\s+|\s+$/g, "") !== "") {
-          addNote(model, layer.elementId, drawingName, txt);
-          saveModel(model);
-          refresh();
-        }
+        var txt = "";
+        try { txt = String(input.plainText); } catch (e) {}
+        txt = txt.replace(/^\s+|\s+$/g, "");
+        if (txt === "") return;
+        addNote(model, layer.elementId, drawingName, txt);
+        saveModel(model);
+        refresh();
       }
       noteBtn.clicked.connect(commit);
-      input.returnPressed.connect(commit); // Enter key also submits
+
+      // Enter handling, primary path: event filter (consumes the key).
+      var filter = makeEnterFilter(commit);
+      if (filter) {
+        try { input.installEventFilter(filter); } catch (e) { filter = null; }
+      }
+
+      // Enter handling, fallback path + auto-grow: if the filter is inert,
+      // a plain Enter lands as a trailing newline in the text — detect it,
+      // check Shift via the live keyboard state, and submit.
+      input.textChanged.connect(function () {
+        sizeNoteInput(input);
+        try {
+          var t = String(input.plainText);
+          if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
+            var shiftHeld = false;
+            try {
+              shiftHeld = (QApplication.keyboardModifiers() & Qt.ShiftModifier) != 0;
+            } catch (e) { /* can't read modifiers; treat Enter as submit */ }
+            if (!shiftHeld) commit(); // commit trims the trailing newline
+          }
+        } catch (e) { /* typing must never break */ }
+      });
 
       return box;
     }
 
-    // A single note card: relative date + text + delete + frame link.
-    function makeNoteCard(drawingName, frameNo, note) {
+    // A single note card: "date • Sub N" meta line + text + delete.
+    // (Navigation lives on the group's frame header now.)
+    function makeNoteCard(drawingName, note) {
       var card = new QFrame();
       card.frameShape = QFrame.StyledPanel;
       var h = new QHBoxLayout(card);
@@ -655,19 +686,9 @@ function SyncNote() {
       var textCol = new QVBoxLayout(textColW);
       textCol.setContentsMargins(0, 0, 0, 0);
 
-      var headerBits = relativeDate(note);
-      if (frameNo > 0) {
-        var dateLink = new QLabel(
-          '<span style="color:gray; font-size:10px;">' + headerBits + "</span>  " +
-          '<a href="#" style="' + LINK_STYLE + ' font-size:10px;">▶ Frame ' +
-          pad(frameNo, 4) + "</a>");
-        dateLink.linkActivated.connect(makeJump(frameNo));
-        addW(textCol, dateLink);
-      } else {
-        var dateLbl = new QLabel(headerBits);
-        dateLbl.styleSheet = "color: gray; font-size: 10px;";
-        addW(textCol, dateLbl);
-      }
+      var meta = new QLabel(relativeDate(note) + "   •   Sub " + drawingName);
+      meta.styleSheet = "color: gray; font-size: 10px;";
+      addW(textCol, meta);
 
       var textLbl = new QLabel(note.text);
       textLbl.wordWrap = true;
@@ -693,12 +714,53 @@ function SyncNote() {
       return function () { frame.setCurrent(fno); };
     }
 
+    // Multiline note box sizing: wrap + grow with content (cap, then scroll).
+    // Falls back to a fixed 2-line height if document metrics aren't bound.
+    function sizeNoteInput(edit) {
+      var h = 44;
+      try {
+        var doc = null;
+        try { doc = edit.document(); } catch (e0) { doc = edit.document; }
+        var s = doc.size;
+        var dh = (typeof s.height === "function") ? s.height() : s.height;
+        if (dh && dh > 0) h = Math.ceil(dh) + 12;
+      } catch (e) { /* keep fallback height */ }
+      if (h < 44) h = 44;
+      if (h > 160) h = 160; // ~8 lines, then the box scrolls internally
+      edit.minimumHeight = h;
+      edit.maximumHeight = h;
+    }
+
+    // Event filter so Enter submits and Shift+Enter inserts a newline.
+    // Returns null if this engine can't build QObject-based filters — the
+    // textChanged fallback in makeGroupWidget covers that case.
+    function makeEnterFilter(commitFn) {
+      try {
+        var f = new QObject(dlg);
+        f.eventFilter = function (watched, event) {
+          try {
+            if (event.type() === QEvent.KeyPress) {
+              var k = event.key();
+              if (k === Qt.Key_Return || k === Qt.Key_Enter) {
+                if (event.modifiers() & Qt.ShiftModifier) return false; // newline
+                commitFn();
+                return true; // consume: Enter = save note
+              }
+            }
+          } catch (e) { /* never block typing */ }
+          return false;
+        };
+        return f;
+      } catch (e) {
+        return null;
+      }
+    }
+
     addBtn.clicked.connect(function () {
       var f = frame.current();
       var drawingName = ensureSubstitutionAtFrame(layer, f);
       if (drawingName) refresh(); // group appears; type the note in its field
     });
-    refreshBtn.clicked.connect(refresh);
 
     refresh();
     dlg.show();
@@ -730,6 +792,27 @@ function SyncNote() {
     var s = String(num);
     while (s.length < width) s = "0" + s;
     return s;
+  }
+
+  // Frame numbers padded to the scene's length: 60 frames -> 2 digits,
+  // 300 frames -> 3 digits, etc.
+  function padFrame(f) {
+    return pad(f, String(frame.numberOf()).length);
+  }
+
+  // Dump the composite input port map to the Message Log — passive
+  // diagnostics for the backburnered "Notes lands at the back" issue.
+  function logPortMap() {
+    try {
+      var comp = findTopComposite();
+      if (!comp) return;
+      var ports = node.numberOfInputPorts(comp);
+      var lines = ["SyncNote " + SN_VERSION + " — port map of " + comp + ":"];
+      for (var i = 0; i < ports; i++) {
+        lines.push("   port " + i + "  <-  " + node.srcNode(comp, i));
+      }
+      MessageLog.trace(lines.join("\n"));
+    } catch (e) { /* diagnostics must never break the run */ }
   }
 
   // Qt Script's Date() returns NaN for ISO-8601 strings (the "NaN-NaN-NaN"

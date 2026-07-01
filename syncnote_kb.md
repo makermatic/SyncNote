@@ -474,6 +474,25 @@ v6 replaces it with `bringToFrontOfComposite()`:
 
 Known trade-off: rebuilding connections drops any waypoints on those cables (cosmetic).
 
+**Status after live test: still lands at the back — backburnered.** v0.6.1 was confirmed running (version stamp in title) and the reorder still didn't stick. All API calls verified against official docs (they exist as used; leftmost-port-renders-front also confirmed in the Composite node docs), so the failure is behavioral, not a hallucinated function. `logPortMap()` now dumps the composite's `port index → source node` map to the Message Log on every run, so real data is waiting whenever this is picked back up.
+
+---
+
+## 15. Implementation log — v0.7.0 (UI revision: frames first)
+
+User-driven redesign — for students reviewing shots, *where in time* a note sits is the identity of a group, not the drawing number:
+
+1. **Group header = clickable frame number.** The `drawing 1` box title is gone; each group is a plain framed card whose first row is a bold green `Frame 009` link (jump on click). Padding adapts to scene length via `padFrame()`: digits = `String(frame.numberOf()).length` (60 frames → `Frame 09`, 300 → `Frame 009`). Non-exposed subs show a gray non-clickable header.
+2. **Separate green frame-link row removed** — merged into the header.
+3. **Note meta line** is now `21 minutes ago  •  Sub 1` ("Sub N" = the substitution number, capital S per user). Per-card frame links removed; navigation lives on the header.
+4. **Multiline, auto-growing note input.** `QLineEdit` → `QTextEdit`: text wraps, and `sizeNoteInput()` grows the box with the document height (cap ~8 lines, then internal scroll), falling back to a fixed 2-line height if document metrics aren't bound in the engine.
+   **Enter = save, Shift+Enter = newline** (Discord-style), implemented in two layers because key interception is unproven in these bindings (no precedent found in openHarmony):
+   - Primary: a `QObject`-based event filter (`makeEnterFilter`) whose script-side `eventFilter` override consumes plain Enter and commits (classic Qt Script Generator bindings support JS overrides of QObject virtuals).
+   - Fallback: if the filter is inert, the Enter lands as a trailing `"\n"` — the `textChanged` handler detects it, checks Shift via `QApplication.keyboardModifiers()`, and commits (trimming the newline). Worst case both layers fail silently → the Add button still commits.
+5. **Toolbar simplified** to a single static **Add Note** button (the frame number in the label was stale between refreshes); Refresh button removed — the list already re-renders on every add/delete and on relaunch.
+
+Also: `logPortMap()` diagnostics (see §14 status note) and version bump shown in the title bar.
+
 ---
 
 ## Sources
