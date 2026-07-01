@@ -26,7 +26,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.7.0";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.7.1";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -577,6 +577,11 @@ function SyncNote() {
     addW(outer, statusLbl);
 
     function refresh() {
+      // Rebuilding the list resets the scroll position — remember it so
+      // adding a note deep in the list doesn't yank the view around.
+      var savedScroll = 0;
+      try { savedScroll = scroll.verticalScrollBar().value; } catch (e) {}
+
       clearLayout(listLayout);
 
       var groups = collectGroups(layer, model);
@@ -591,6 +596,27 @@ function SyncNote() {
       // Expanding spacer widget packs rows to the top, SyncSketch-style.
       // (Safer than addStretch(), which has its own binding quirks.)
       addW(listLayout, new QWidget(), 1);
+
+      restoreScroll(savedScroll);
+    }
+
+    // Put the scrollbar back where it was: once immediately, and once after
+    // a short delay — the immediate set can be clamped because the rebuilt
+    // list hasn't been measured yet. (Parented QTimer so it isn't GC'd;
+    // same pattern openHarmony uses for its toasts.)
+    function restoreScroll(v) {
+      if (!v) return;
+      try { scroll.verticalScrollBar().value = v; } catch (e) {}
+      try {
+        var t;
+        try { t = new QTimer(dlg); }
+        catch (e1) { t = new QTimer(); dlg.__snScrollTimer = t; }
+        t.singleShot = true;
+        t.timeout.connect(function () {
+          try { scroll.verticalScrollBar().value = v; } catch (e) {}
+        });
+        t.start(50);
+      } catch (e) { /* immediate restore above already did its best */ }
     }
 
     // One substitution group: clickable frame header + notes + inline adder.
@@ -621,7 +647,7 @@ function SyncNote() {
       // Existing notes.
       var notes = notesFor(model, layer.elementId, drawingName);
       for (var i = 0; i < notes.length; i++) {
-        addW(v, makeNoteCard(drawingName, notes[i]));
+        addW(v, makeNoteCard(drawingName, frameNo, notes[i]));
       }
 
       // Inline "add note" row: multiline box that wraps and grows.
@@ -676,8 +702,9 @@ function SyncNote() {
     }
 
     // A single note card: "date • Sub N" meta line + text + delete.
-    // (Navigation lives on the group's frame header now.)
-    function makeNoteCard(drawingName, note) {
+    // "Sub N" is clickable and jumps to the sub's first frame, same as the
+    // group header — handy when a card is what's under your cursor.
+    function makeNoteCard(drawingName, frameNo, note) {
       var card = new QFrame();
       card.frameShape = QFrame.StyledPanel;
       var h = new QHBoxLayout(card);
@@ -686,8 +713,17 @@ function SyncNote() {
       var textCol = new QVBoxLayout(textColW);
       textCol.setContentsMargins(0, 0, 0, 0);
 
-      var meta = new QLabel(relativeDate(note) + "   •   Sub " + drawingName);
-      meta.styleSheet = "color: gray; font-size: 10px;";
+      var metaHtml = '<span style="color:gray; font-size:10px;">' +
+                     relativeDate(note) + "   •   </span>";
+      if (frameNo > 0) {
+        metaHtml += '<a href="#" style="' + LINK_STYLE + ' font-size:10px;">Sub ' +
+                    drawingName + "</a>";
+      } else {
+        metaHtml += '<span style="color:gray; font-size:10px;">Sub ' +
+                    drawingName + "</span>";
+      }
+      var meta = new QLabel(metaHtml);
+      if (frameNo > 0) meta.linkActivated.connect(makeJump(frameNo));
       addW(textCol, meta);
 
       var textLbl = new QLabel(note.text);

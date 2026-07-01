@@ -495,6 +495,14 @@ Also: `logPortMap()` diagnostics (see §14 status note) and version bump shown i
 
 ---
 
+## 16. Implementation log — v0.7.1 (scroll preservation + clickable Subs)
+
+1. **Scroll no longer jumps on add/delete.** `refresh()` rebuilds the whole list, which resets `QScrollArea`'s position. Now the scrollbar value is captured before the rebuild and restored twice: immediately, and again via a parented single-shot `QTimer` at 50 ms — the immediate restore can be clamped because the rebuilt content hasn't been measured yet. (Timer pattern lifted from openHarmony's toast implementation — proven on this engine.)
+2. **"Sub N" on note cards is now a clickable link** that jumps to the sub's first frame, same as the group header (gray/non-clickable when the sub isn't exposed).
+3. Accepted caveat (user decision): notes persist to disk only when the Harmony scene is saved (§7.3.5 #9); auto-saving the scene on panel close was considered and rejected as intrusive.
+
+---
+
 ## Sources
 - column class (getEntry/setEntry/getElementIdOfDrawing/add/getDrawingTimings): https://docs.toonboom.com/help/harmony-22/scripting/script/classcolumn.html
 - element class (add/id/getNameById/physicalName): https://docs.toonboom.com/help/harmony-22/scripting/script/classelement.html
