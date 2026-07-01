@@ -22,11 +22,18 @@
  * See syncnote_kb.md for design rationale, API reference, and Qt gotchas.
  */
 
+// Strong references to script-created QObjects (event filters, timers).
+// Their JS wrappers hold the script-side method overrides; if the wrapper
+// is garbage-collected, the override silently reverts to a no-op — which
+// showed up in testing as card clicks randomly dying. Module scope keeps
+// them alive for the dialog's lifetime; reset on each launch.
+var g_snKeepAlive = [];
+
 function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.8.1";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.8.2";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -46,6 +53,7 @@ function SyncNote() {
 
   function main() {
     closeExistingDialog(); // one panel at a time; reopening = refresh
+    g_snKeepAlive = [];    // drop refs belonging to the previous panel
 
     var model = loadModel();
     var layer = ensureNotesLayer(model);
@@ -590,6 +598,7 @@ function SyncNote() {
       var savedScroll = 0;
       try { savedScroll = scroll.verticalScrollBar().value; } catch (e) {}
 
+      g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
 
       var groups = collectGroups(layer, model);
@@ -618,7 +627,8 @@ function SyncNote() {
       try {
         var t;
         try { t = new QTimer(dlg); }
-        catch (e1) { t = new QTimer(); dlg.__snScrollTimer = t; }
+        catch (e1) { t = new QTimer(); }
+        g_snKeepAlive.push(t);
         t.singleShot = true;
         t.timeout.connect(function () {
           try { scroll.verticalScrollBar().value = v; } catch (e) {}
@@ -817,6 +827,7 @@ function SyncNote() {
           } catch (e) { /* never break interaction */ }
           return false;
         };
+        g_snKeepAlive.push(f); // pin the wrapper or GC kills the override
         return f;
       } catch (e) {
         return null;
@@ -842,6 +853,7 @@ function SyncNote() {
           } catch (e) { /* never block typing */ }
           return false;
         };
+        g_snKeepAlive.push(f); // pin the wrapper or GC kills the override
         return f;
       } catch (e) {
         return null;

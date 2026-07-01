@@ -324,6 +324,7 @@ These caused real crashes in v1 **and v2** — treat as hard rules:
 7. **`new Date(isoString)` returns Invalid Date** in Harmony's JS engine (renders as "NaN-NaN-NaN"). Store numeric timestamps (`(new Date()).getTime()`) and construct with `new Date(number)`; hand-parse ISO strings from legacy data with a regex + `Date.UTC(...)`.
 8. **Composite port order: the LEFTMOST input port renders in FRONT — and you cannot insert there directly.** Live testing proved `node.link(src, 0, comp, 0, false, true)` does **not** insert at port 0: when the port is occupied, `mayAddInputPort` **appends a new port at the right end** (= back), regardless of the `dstPort` you pass. An unlink-then-relink of just one cable therefore also lands at the back. The only deterministic way to put a node frontmost is to **rebuild the whole port order** — snapshot every input (`node.srcNodeInfo(comp, i)` for `{node, port}`, falling back to `srcNode`), unlink all ports high→low, then relink with your node first (ports fill left→right in connection order). Wrap it in one undo accum and skip it entirely when already frontmost. See `bringToFrontOfComposite()`.
 9. **Scene metadata persists only when the scene is saved.** `scene.setMetadata` updates the in-memory scene; the data reaches the `.xstage` on scene save. Unsaved session = unsaved notes.
+10. **Script-side QObject overrides die silently when their JS wrapper is garbage-collected.** A `new QObject()` with an assigned `eventFilter` (or any overridden virtual) works only while the script wrapper object is alive; once GC collects it, the C++ object keeps existing but the override reverts to a no-op — no error, the behavior just stops. Symptom in the wild: card clicks dying *intermittently, per-card*, after some interaction. **Fix: pin every such object in a module-level keep-alive array** (`g_snKeepAlive.push(f)`), reset per launch/refresh. Signal connections don't need this (the engine holds connection closures); virtual overrides and property-assigned handlers do.
 
 ### 7.4 Signals / slots
 ```javascript
@@ -520,6 +521,16 @@ v0.8.0 live test: scrubbing ✓, text copy ✓, but card-background clicks were 
 3. Text selection still works and still doesn't jump — a selectable label accepts its mouse events, so they never bubble to the card filter.
 
 Rollback point if card clicks are still dead on some engine: `git checkout b8b68a9 -- SyncNote.js` restores the v0.8.0 link-based navigation.
+
+---
+
+## 19. Implementation log — v0.8.2 (intermittent click death = GC)
+
+v0.8.1 live test: card clicks worked but died *intermittently, per-card* after clicking around — the fingerprint of garbage collection, not logic. Root cause (§7.3.5 #10): each card's click filter is a `new QObject()` whose `eventFilter` override lives on the JS wrapper; nothing held a reference to the wrapper, so GC collected some of them mid-session and those filters silently reverted to no-ops.
+
+Fix: module-level `g_snKeepAlive` array pins every script-created QObject — click filters, Enter filters, and the scroll-restore timer — for the panel's lifetime. Reset on each launch and on each list rebuild (old cards are torn down anyway). Same class of bug as the "keep the dialog referenced" rule from §7.5, now generalized: **anything with a script-side override must be pinned.**
+
+Rollback (if still flaky): `git checkout b8b68a9 -- SyncNote.js` for v0.8.0 link navigation + selectable text.
 
 ---
 
