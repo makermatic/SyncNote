@@ -33,7 +33,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.8.3";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.8.4";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -656,7 +656,7 @@ function SyncNote() {
         var head = new QLabel(
           '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
           padFrame(frameNo) + "</a>");
-        head.toolTip = "Go to frame " + frameNo;
+        head.toolTip = "Go to Frame " + frameNo;
         head.linkActivated.connect(makeJump(frameNo));
         addW(v, head);
       } else {
