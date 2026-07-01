@@ -503,6 +503,14 @@ Also: `logPortMap()` diagnostics (see §14 status note) and version bump shown i
 
 ---
 
+## 17. Implementation log — v0.8.0 (clickable cards, copyable text, frame scrubbing)
+
+1. **Click a note card's background → jump to its frame.** Implemented with a mouse `eventFilter` (`makeClickFilter`) on the card frame — the same QObject-filter mechanism the Enter key uses, which live testing confirmed works on this engine. The filter only observes (`return false`), so children that accept their own mouse events never bubble up to it: links, the ✕ button, the input box, and the now-selectable text all keep working. Clicks on genuinely empty card space propagate to the card and trigger the jump.
+2. **Note text is selectable/copyable** via `textLbl.textInteractionFlags = Qt.TextSelectableByMouse` (drag-select, Ctrl+C, right-click Copy) — defensively wrapped; if a binding refuses the enum property the text simply stays non-selectable. Selection and card-click coexist *because* of the propagation rule in #1: a label that accepts mouse events swallows them.
+3. **Frame scrub buttons** — toolbar is now `[ Add Note ][◀][▶]`. `scrubToNoteFrame(dir)` jumps the playhead to the nearest note frame strictly after (▶) or before (◀) the *live* playhead position; frames are recomputed from `collectGroups` on every click so new subs are always included. No wrap-around at the ends.
+
+---
+
 ## Sources
 - column class (getEntry/setEntry/getElementIdOfDrawing/add/getDrawingTimings): https://docs.toonboom.com/help/harmony-22/scripting/script/classcolumn.html
 - element class (add/id/getNameById/physicalName): https://docs.toonboom.com/help/harmony-22/scripting/script/classelement.html

@@ -26,7 +26,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.7.1";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.8.0";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -552,7 +552,15 @@ function SyncNote() {
     bar.setContentsMargins(0, 0, 0, 0);
     var addBtn = new QPushButton("Add Note");
     addBtn.toolTip = "Create a substitution at the current playhead frame";
+    var prevBtn = new QPushButton("◀");
+    prevBtn.toolTip = "Go to the previous note frame";
+    prevBtn.maximumWidth = 36;
+    var nextBtn = new QPushButton("▶");
+    nextBtn.toolTip = "Go to the next note frame";
+    nextBtn.maximumWidth = 36;
     addW(bar, addBtn, 1);
+    addW(bar, prevBtn);
+    addW(bar, nextBtn);
     addW(outer, toolbarW);
 
     // ---- scrolling list (QScrollArea expands by default -> fills window) ----
@@ -728,8 +736,24 @@ function SyncNote() {
 
       var textLbl = new QLabel(note.text);
       textLbl.wordWrap = true;
+      // Selectable + copyable (drag to select, Ctrl+C / right-click Copy).
+      // Because the label now accepts mouse events, clicks on the text do
+      // NOT bubble to the card's jump filter — selection stays safe.
+      try { textLbl.textInteractionFlags = Qt.TextSelectableByMouse; }
+      catch (e) { /* engine refused the flag; text stays non-selectable */ }
       addW(textCol, textLbl);
       addW(h, textColW, 1);
+
+      // Clicking the card's empty/background space jumps to the frame.
+      if (frameNo > 0) {
+        var clickF = makeClickFilter(makeJump(frameNo));
+        if (clickF) {
+          try {
+            card.installEventFilter(clickF);
+            card.toolTip = "Click to go to frame " + frameNo;
+          } catch (e) { /* header/Sub links remain the navigation */ }
+        }
+      }
 
       var delBtn = new QPushButton("✕");
       delBtn.toolTip = "Delete note";
@@ -767,6 +791,28 @@ function SyncNote() {
       edit.maximumHeight = h;
     }
 
+    // Event filter that fires on a left-button release — used to make a
+    // whole card clickable. Purely observational (never consumes), so child
+    // widgets (links, buttons, selectable text) keep working: they accept
+    // their own mouse events, which then never propagate up to the card.
+    function makeClickFilter(onClick) {
+      try {
+        var f = new QObject(dlg);
+        f.eventFilter = function (watched, event) {
+          try {
+            if (event.type() === QEvent.MouseButtonRelease &&
+                event.button() === Qt.LeftButton) {
+              onClick();
+            }
+          } catch (e) { /* never break interaction */ }
+          return false;
+        };
+        return f;
+      } catch (e) {
+        return null;
+      }
+    }
+
     // Event filter so Enter submits and Shift+Enter inserts a newline.
     // Returns null if this engine can't build QObject-based filters — the
     // textChanged fallback in makeGroupWidget covers that case.
@@ -797,6 +843,23 @@ function SyncNote() {
       var drawingName = ensureSubstitutionAtFrame(layer, f);
       if (drawingName) refresh(); // group appears; type the note in its field
     });
+
+    // Scrub the playhead between note frames, anchored to wherever the
+    // playhead currently is (frames recomputed live so new subs count).
+    function scrubToNoteFrame(dir) {
+      var f = frame.current();
+      var groups = collectGroups(layer, model);
+      var best = -1;
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i].frame;
+        if (g <= 0) continue;
+        if (dir > 0 && g > f && (best < 0 || g < best)) best = g;
+        if (dir < 0 && g < f && (best < 0 || g > best)) best = g;
+      }
+      if (best > 0) frame.setCurrent(best); // no next/prev note: do nothing
+    }
+    prevBtn.clicked.connect(function () { scrubToNoteFrame(-1); });
+    nextBtn.clicked.connect(function () { scrubToNoteFrame(1); });
 
     refresh();
     dlg.show();
