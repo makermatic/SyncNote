@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Write|Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "grep -q 'SyncNote\\.js' && powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$CLAUDE_PROJECT_DIR/install.ps1\" || true",
+            "timeout": 30,
+            "statusMessage": "Installing SyncNote.js into Harmony scripts folders..."
+          }
+        ]
+      }
+    ]
+  }
+}
