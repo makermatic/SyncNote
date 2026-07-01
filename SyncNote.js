@@ -26,7 +26,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.8.0";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.8.1";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -638,13 +638,13 @@ function SyncNote() {
       box.frameShape = QFrame.StyledPanel;
       var v = new QVBoxLayout(box);
 
-      // Header: green, clickable "Frame 009" (padded to scene length digits).
+      // Header: green "Frame 009" (padded to scene length digits). Plain
+      // text, not a link — the whole card is the click target now, and a
+      // label with links swallows mouse events instead of passing them up.
       if (frameNo > 0) {
         var head = new QLabel(
-          '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
-          padFrame(frameNo) + "</a>");
-        head.toolTip = "Go to frame " + frameNo;
-        head.linkActivated.connect(makeJump(frameNo));
+          '<span style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
+          padFrame(frameNo) + "</span>");
         addW(v, head);
       } else {
         var deadHead = new QLabel("(not exposed on timeline)  •  Sub " + drawingName);
@@ -706,12 +706,26 @@ function SyncNote() {
         } catch (e) { /* typing must never break */ }
       });
 
+      // The whole group card is the click target: header area, note cards,
+      // and any background space jump to the frame. Children that accept
+      // their own mouse events (text selection, input box, buttons) swallow
+      // clicks before they reach the card, so they're unaffected.
+      if (frameNo > 0) {
+        var clickF = makeClickFilter(makeJump(frameNo));
+        if (clickF) {
+          try {
+            box.installEventFilter(clickF);
+            box.toolTip = "Click to go to frame " + frameNo;
+          } catch (e) { /* no card click; scrub buttons still navigate */ }
+        }
+      }
+
       return box;
     }
 
     // A single note card: "date • Sub N" meta line + text + delete.
-    // "Sub N" is clickable and jumps to the sub's first frame, same as the
-    // group header — handy when a card is what's under your cursor.
+    // Plain text throughout — navigation is the group card's click (links
+    // would swallow the mouse events the card needs).
     function makeNoteCard(drawingName, frameNo, note) {
       var card = new QFrame();
       card.frameShape = QFrame.StyledPanel;
@@ -721,17 +735,8 @@ function SyncNote() {
       var textCol = new QVBoxLayout(textColW);
       textCol.setContentsMargins(0, 0, 0, 0);
 
-      var metaHtml = '<span style="color:gray; font-size:10px;">' +
-                     relativeDate(note) + "   •   </span>";
-      if (frameNo > 0) {
-        metaHtml += '<a href="#" style="' + LINK_STYLE + ' font-size:10px;">Sub ' +
-                    drawingName + "</a>";
-      } else {
-        metaHtml += '<span style="color:gray; font-size:10px;">Sub ' +
-                    drawingName + "</span>";
-      }
-      var meta = new QLabel(metaHtml);
-      if (frameNo > 0) meta.linkActivated.connect(makeJump(frameNo));
+      var meta = new QLabel(relativeDate(note) + "   •   Sub " + drawingName);
+      meta.styleSheet = "color: gray; font-size: 10px;";
       addW(textCol, meta);
 
       var textLbl = new QLabel(note.text);
@@ -743,17 +748,6 @@ function SyncNote() {
       catch (e) { /* engine refused the flag; text stays non-selectable */ }
       addW(textCol, textLbl);
       addW(h, textColW, 1);
-
-      // Clicking the card's empty/background space jumps to the frame.
-      if (frameNo > 0) {
-        var clickF = makeClickFilter(makeJump(frameNo));
-        if (clickF) {
-          try {
-            card.installEventFilter(clickF);
-            card.toolTip = "Click to go to frame " + frameNo;
-          } catch (e) { /* header/Sub links remain the navigation */ }
-        }
-      }
 
       var delBtn = new QPushButton("✕");
       delBtn.toolTip = "Delete note";
@@ -791,18 +785,34 @@ function SyncNote() {
       edit.maximumHeight = h;
     }
 
-    // Event filter that fires on a left-button release — used to make a
+    // Event filter that fires on a mouse-button release — used to make a
     // whole card clickable. Purely observational (never consumes), so child
-    // widgets (links, buttons, selectable text) keep working: they accept
+    // widgets (buttons, selectable text, inputs) keep working: they accept
     // their own mouse events, which then never propagate up to the card.
+    //
+    // Hardened for binding gaps: the event may arrive as a generic QEvent
+    // without button(), and the QEvent enum itself may be unbound — so we
+    // fall back to the numeric type id (MouseButtonRelease == 3) and treat
+    // the button check as optional instead of letting a throw kill the click.
     function makeClickFilter(onClick) {
       try {
         var f = new QObject(dlg);
         f.eventFilter = function (watched, event) {
           try {
-            if (event.type() === QEvent.MouseButtonRelease &&
-                event.button() === Qt.LeftButton) {
-              onClick();
+            var typeNum = -1;
+            try { typeNum = Number(event.type()); } catch (e0) { return false; }
+            var releaseType = 3; // Qt: QEvent::MouseButtonRelease
+            try {
+              if (typeof QEvent !== "undefined" &&
+                  QEvent.MouseButtonRelease !== undefined) {
+                releaseType = Number(QEvent.MouseButtonRelease);
+              }
+            } catch (e1) { /* keep numeric fallback */ }
+            if (typeNum === releaseType) {
+              var leftButton = true; // assume left if button() is unavailable
+              try { leftButton = (event.button() === Qt.LeftButton); }
+              catch (e2) { /* generic QEvent; accept the click */ }
+              if (leftButton) onClick();
             }
           } catch (e) { /* never break interaction */ }
           return false;

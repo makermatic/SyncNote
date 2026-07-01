@@ -511,6 +511,18 @@ Also: `logPortMap()` diagnostics (see §14 status note) and version bump shown i
 
 ---
 
+## 18. Implementation log — v0.8.1 (one click model: the card IS the button)
+
+v0.8.0 live test: scrubbing ✓, text copy ✓, but card-background clicks were dead. Two suspects fixed together (user's call: simplify rather than diagnose):
+
+1. **All `<a href>` links removed** — the green frame header and "Sub N" are plain text now. Rationale: a QLabel with links accepts mouse events, so it swallows clicks instead of propagating them to the card; with the card as the sole click target there is nothing left to compete with. Navigation = click anywhere on the **group card** (header area, note cards, background) + the scrub buttons.
+2. **Click filter moved to the group card and hardened** (`makeClickFilter`): the event Harmony passes a filter may be a generic `QEvent` with no `button()`, and the `QEvent` enum itself may be unbound — either would throw and my catch silently killed every click in v0.8.0. Now: numeric fallback for the type id (`MouseButtonRelease == 3`), and the left-button check is optional instead of fatal.
+3. Text selection still works and still doesn't jump — a selectable label accepts its mouse events, so they never bubble to the card filter.
+
+Rollback point if card clicks are still dead on some engine: `git checkout b8b68a9 -- SyncNote.js` restores the v0.8.0 link-based navigation.
+
+---
+
 ## Sources
 - column class (getEntry/setEntry/getElementIdOfDrawing/add/getDrawingTimings): https://docs.toonboom.com/help/harmony-22/scripting/script/classcolumn.html
 - element class (add/id/getNameById/physicalName): https://docs.toonboom.com/help/harmony-22/scripting/script/classelement.html
