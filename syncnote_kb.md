@@ -561,7 +561,21 @@ The composite-cable saga's root flaw, finally named (with the user's help — "i
 
 Design lesson for §7.3.5: **when the API and the user's eyes disagree, find the API that measures what the user is actually looking at.**
 
-**RESOLVED (v0.9.1, 2026-07-02).** Live test confirmed all behaviors: wrong port → auto-moved to front; detached → reconnected to front; already front → untouched. The logs settled the mystery: `after reorder (Notes on first port): rank 39` / `after reorder (Notes on last port): rank 0` — **the last-connected port is the frontmost layer**, the inverse of the documented claim (§7.3.5 #8 updated). v0.9.1 tries the proven winner first to avoid a wasted rewire, keeping Notes-first as a safety net for other scenes/versions.
+**RESOLVED (v0.9.1, 2026-07-02).** *(see §22 for the follow-on auto-refresh work)* Live test confirmed all behaviors: wrong port → auto-moved to front; detached → reconnected to front; already front → untouched. The logs settled the mystery: `after reorder (Notes on first port): rank 39` / `after reorder (Notes on last port): rank 0` — **the last-connected port is the frontmost layer**, the inverse of the documented claim (§7.3.5 #8 updated). v0.9.1 tries the proven winner first to avoid a wasted rewire, keeping Notes-first as a safety net for other scenes/versions.
+
+---
+
+## 22. Implementation log — v0.10.0 (stale-frame fix: auto-refresh + click self-heal)
+
+Oversight found in testing: the panel snapshots each sub's first frame at build time, so dragging a sub to another timeline frame while the panel is open left dead links (click → old frame). Fixed with two independent layers:
+
+1. **Click-time self-heal (correctness backbone).** `makeJump(frameNo)` → `makeJumpToSub(drawingName, shownFrame)`: the sub's first frame is **recomputed at click time** via `firstFrameOfDrawing`, so navigation is always correct regardless of display staleness; if the recomputed frame differs from what the card shows, the click also triggers a refresh. (The scrub buttons already recomputed live — that's why they never had the bug.)
+2. **Event-driven auto-refresh.** A `SceneChangeNotifier(dlg)` (first use in this project) listens to `columnValuesChanged(StringList)`; when the list contains our notes column (case-insensitive; treat-as-relevant when uninspectable), a 300 ms debounced single-shot timer compares a `drawing:frame` **signature** of the live timeline against what's displayed and rebuilds only on a real difference. This makes our own writes (which already refresh) and unrelated edits no-ops. Constructor pattern from the docs: `new SceneChangeNotifier(parentQObject)`; parenting to the dialog ends notifications when the panel closes.
+
+Supporting changes:
+- **Keep-alive split**: `g_snKeepAlive` (per-refresh: card filters, scroll timer) vs. new `g_snKeepAlivePanel` (panel-lifetime: notifier, stale timer) — the notifier must survive list rebuilds, and the per-refresh array is cleared on every rebuild (§7.3.5 #10 applies to the notifier too).
+- **Draft preservation**: before any rebuild, non-empty input texts are stashed per drawing and restored into the rebuilt boxes, so an auto-refresh can never eat a half-typed note; `commit()` empties its box pre-refresh so committed text isn't re-saved as a draft.
+- If `SceneChangeNotifier` is unavailable on an engine, it degrades to click-time self-heal only (traced to the Message Log).
 
 ---
 

@@ -27,13 +27,15 @@
 // is garbage-collected, the override silently reverts to a no-op — which
 // showed up in testing as card clicks randomly dying. Module scope keeps
 // them alive for the dialog's lifetime; reset on each launch.
-var g_snKeepAlive = [];
+var g_snKeepAlive = [];      // per-refresh objects (card filters, scroll timer)
+var g_snKeepAlivePanel = []; // panel-lifetime objects (SceneChangeNotifier,
+                             // stale-check timer) — must survive refreshes
 
 function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.9.1";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.10.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -52,8 +54,9 @@ function SyncNote() {
   return; // everything below is hoisted helper functions
 
   function main() {
-    closeExistingDialog(); // one panel at a time; reopening = refresh
-    g_snKeepAlive = [];    // drop refs belonging to the previous panel
+    closeExistingDialog();     // one panel at a time; reopening = refresh
+    g_snKeepAlive = [];        // drop refs belonging to the previous panel
+    g_snKeepAlivePanel = [];
 
     var model = loadModel();
     var layer = ensureNotesLayer(model);
@@ -641,11 +644,38 @@ function SyncNote() {
     statusLbl.wordWrap = true;
     addW(outer, statusLbl);
 
+    // ---- staleness state (v0.10.0) ----
+    var shownSig = "";    // drawing:frame signature of what's displayed
+    var drafts = {};      // unsaved input text, preserved across rebuilds
+    var liveInputs = {};  // drawingName -> its QTextEdit in the current build
+    var staleTimer = null;
+
+    // Signature of the live timeline state the list depends on.
+    function groupsSignature() {
+      var groups = collectGroups(layer, model);
+      var parts = [];
+      for (var i = 0; i < groups.length; i++) {
+        parts.push(groups[i].drawing + ":" + groups[i].frame);
+      }
+      return parts.join("|");
+    }
+
     function refresh() {
       // Rebuilding the list resets the scroll position — remember it so
       // adding a note deep in the list doesn't yank the view around.
       var savedScroll = 0;
       try { savedScroll = scroll.verticalScrollBar().value; } catch (e) {}
+
+      // Stash half-typed notes so an auto-refresh can't eat a draft.
+      try {
+        for (var dn in liveInputs) {
+          if (!liveInputs.hasOwnProperty(dn)) continue;
+          var draft = "";
+          try { draft = String(liveInputs[dn].plainText); } catch (e) {}
+          if (draft.replace(/^\s+|\s+$/g, "") !== "") drafts[dn] = draft;
+        }
+      } catch (e) { /* drafts are best-effort */ }
+      liveInputs = {};
 
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
@@ -663,6 +693,7 @@ function SyncNote() {
       // (Safer than addStretch(), which has its own binding quirks.)
       addW(listLayout, new QWidget(), 1);
 
+      shownSig = groupsSignature(); // what the panel now reflects
       restoreScroll(savedScroll);
     }
 
@@ -706,7 +737,7 @@ function SyncNote() {
           '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
           padFrame(frameNo) + "</a>");
         head.toolTip = "Go to Frame " + frameNo;
-        head.linkActivated.connect(makeJump(frameNo));
+        head.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
         addW(v, head);
       } else {
         var deadHead = new QLabel("(not exposed on timeline)  •  Sub " + drawingName);
@@ -728,6 +759,11 @@ function SyncNote() {
       var input = new QTextEdit();
       try { input.placeholderText = "Add a note…  (Enter = save, Shift+Enter = new line)"; }
       catch (e) { /* placeholder not bound in some engines; cosmetic */ }
+      liveInputs[drawingName] = input;
+      if (drafts[drawingName]) { // restore text an auto-refresh interrupted
+        try { input.plainText = drafts[drawingName]; } catch (e) {}
+        delete drafts[drawingName];
+      }
       sizeNoteInput(input);
       var noteBtn = new QPushButton("Add");
       addW(addRow, input, 1);
@@ -741,6 +777,10 @@ function SyncNote() {
         if (txt === "") return;
         addNote(model, layer.elementId, drawingName, txt);
         saveModel(model);
+        // Empty the box before refresh so the draft-stash doesn't re-save
+        // the just-committed text as an unsaved draft.
+        try { input.plainText = ""; } catch (e) {}
+        delete drafts[drawingName];
         refresh();
       }
       noteBtn.clicked.connect(commit);
@@ -792,7 +832,7 @@ function SyncNote() {
                     drawingName + "</span>";
       }
       var meta = new QLabel(metaHtml);
-      if (frameNo > 0) meta.linkActivated.connect(makeJump(frameNo));
+      if (frameNo > 0) meta.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
       addW(textCol, meta);
 
       var textLbl = new QLabel(note.text);
@@ -820,8 +860,16 @@ function SyncNote() {
       return card;
     }
 
-    function makeJump(fno) {
-      return function () { frame.setCurrent(fno); };
+    // Jump by DRAWING, not by a frame captured at build time: the sub's
+    // first frame is recomputed at click time, so a sub moved on the
+    // timeline still navigates correctly — and if the recomputed frame
+    // disagrees with what the card shows, the display heals itself.
+    function makeJumpToSub(dn, shownFrame) {
+      return function () {
+        var f = firstFrameOfDrawing(layer.column, dn);
+        if (f > 0) frame.setCurrent(f);
+        if (f !== shownFrame) refresh(); // display was stale
+      };
     }
 
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
@@ -889,6 +937,57 @@ function SyncNote() {
     }
     prevBtn.clicked.connect(function () { scrubToNoteFrame(-1); });
     nextBtn.clicked.connect(function () { scrubToNoteFrame(1); });
+
+    // ---- auto-refresh (v0.10.0) ----
+    // SceneChangeNotifier.columnValuesChanged fires whenever exposure data
+    // changes (e.g. a sub dragged to another frame in the timeline). We
+    // debounce it, then rebuild ONLY if the displayed frames actually went
+    // stale — so our own writes (already followed by refresh) and unrelated
+    // column edits are no-ops, and typing is never interrupted needlessly.
+    function scheduleStalenessCheck() {
+      try {
+        if (!staleTimer) {
+          try { staleTimer = new QTimer(dlg); }
+          catch (e0) { staleTimer = new QTimer(); }
+          staleTimer.singleShot = true;
+          staleTimer.timeout.connect(function () {
+            try {
+              if (groupsSignature() !== shownSig) {
+                trace("timeline changed under the panel — auto-refreshing");
+                refresh();
+              }
+            } catch (e) { /* never break the session */ }
+          });
+          g_snKeepAlivePanel.push(staleTimer); // survives refreshes
+        }
+        staleTimer.stop();
+        staleTimer.start(300);
+      } catch (e) { /* auto-refresh unavailable; click self-heal covers it */ }
+    }
+
+    try {
+      var notifier = new SceneChangeNotifier(dlg); // dies with the panel
+      notifier.columnValuesChanged.connect(function (cols) {
+        try {
+          var relevant = true; // if the list is uninspectable, check anyway
+          if (cols && cols.length !== undefined) {
+            relevant = false;
+            for (var i = 0; i < cols.length; i++) {
+              if (String(cols[i]).toLowerCase() === String(layer.column).toLowerCase()) {
+                relevant = true;
+                break;
+              }
+            }
+          }
+          if (relevant) scheduleStalenessCheck();
+        } catch (e) { /* never break the session */ }
+      });
+      g_snKeepAlivePanel.push(notifier); // pin: script QObject, GC rules apply
+      trace("SceneChangeNotifier active — timeline edits auto-refresh the panel");
+    } catch (e) {
+      trace("SceneChangeNotifier unavailable (" + e + ") — falling back to " +
+            "click-time self-heal only");
+    }
 
     refresh();
     dlg.show();
