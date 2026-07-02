@@ -33,7 +33,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.9.0";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.9.1";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -284,9 +284,13 @@ function SyncNote() {
     // 3) Not frontmost: try both port orders, measuring after each. Which
     // end of the port row is "front" has been ambiguous all along — so let
     // the measurement decide instead of assuming.
+    // Measured in live testing (v0.9.0 logs): the LAST-connected port is the
+    // frontmost layer — the opposite of the documented "leftmost renders in
+    // front". Try the proven winner first; keep the other as a safety net
+    // for scenes/versions where the semantics differ.
     var strategies = [
-      { notesFirst: true,  label: "Notes on first port" },
-      { notesFirst: false, label: "Notes on last port" }
+      { notesFirst: false, label: "Notes on last port" },
+      { notesFirst: true,  label: "Notes on first port" }
     ];
     for (var s = 0; s < strategies.length; s++) {
       reorderComposite(readPath, comp, strategies[s].notesFirst);
