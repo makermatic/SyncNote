@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.10.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.10.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -649,6 +649,7 @@ function SyncNote() {
     var drafts = {};      // unsaved input text, preserved across rebuilds
     var liveInputs = {};  // drawingName -> its QTextEdit in the current build
     var staleTimer = null;
+    var lastSignal = "";  // which notifier signal requested the last check
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -953,7 +954,8 @@ function SyncNote() {
           staleTimer.timeout.connect(function () {
             try {
               if (groupsSignature() !== shownSig) {
-                trace("timeline changed under the panel — auto-refreshing");
+                trace("timeline changed under the panel (via " + lastSignal +
+                      ") — auto-refreshing");
                 refresh();
               }
             } catch (e) { /* never break the session */ }
@@ -965,25 +967,49 @@ function SyncNote() {
       } catch (e) { /* auto-refresh unavailable; click self-heal covers it */ }
     }
 
+    // No column filtering (v0.10.1): the signal may carry internal column
+    // names that don't match ours, which silently killed auto-refresh in
+    // v0.10.0. False alarms are free — the staleness check only rebuilds
+    // when the displayed frames genuinely changed — so listen broadly and
+    // let the signature comparison be the gatekeeper.
+    var colSignalLogged = false;
+    function onTimelineMaybeChanged(signalName) {
+      lastSignal = signalName;
+      scheduleStalenessCheck();
+    }
+
     try {
       var notifier = new SceneChangeNotifier(dlg); // dies with the panel
       notifier.columnValuesChanged.connect(function (cols) {
         try {
-          var relevant = true; // if the list is uninspectable, check anyway
-          if (cols && cols.length !== undefined) {
-            relevant = false;
-            for (var i = 0; i < cols.length; i++) {
-              if (String(cols[i]).toLowerCase() === String(layer.column).toLowerCase()) {
-                relevant = true;
-                break;
-              }
-            }
+          if (!colSignalLogged) { // one-time: learn the internal column names
+            colSignalLogged = true;
+            var names = [];
+            try {
+              for (var i = 0; i < cols.length; i++) names.push(String(cols[i]));
+            } catch (e0) { names.push("(uninspectable)"); }
+            trace("columnValuesChanged fired; columns: " + names.join(", ") +
+                  "  (our column: " + layer.column + ")");
           }
-          if (relevant) scheduleStalenessCheck();
-        } catch (e) { /* never break the session */ }
+        } catch (e) { /* diagnostics only */ }
+        onTimelineMaybeChanged("columnValuesChanged");
       });
+      // Belt and suspenders: exposure drags may surface as other signals,
+      // and currentFrameChanged guarantees reconciliation on the very next
+      // playhead touch even if an edit emits nothing we recognize.
+      try {
+        notifier.sceneChanged.connect(function () {
+          onTimelineMaybeChanged("sceneChanged");
+        });
+      } catch (e1) { /* signal not bound in this engine */ }
+      try {
+        notifier.currentFrameChanged.connect(function () {
+          onTimelineMaybeChanged("currentFrameChanged");
+        });
+      } catch (e2) { /* signal not bound in this engine */ }
       g_snKeepAlivePanel.push(notifier); // pin: script QObject, GC rules apply
-      trace("SceneChangeNotifier active — timeline edits auto-refresh the panel");
+      trace("SceneChangeNotifier active — listening: columnValuesChanged, " +
+            "sceneChanged, currentFrameChanged");
     } catch (e) {
       trace("SceneChangeNotifier unavailable (" + e + ") — falling back to " +
             "click-time self-heal only");

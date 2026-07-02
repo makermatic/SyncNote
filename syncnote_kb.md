@@ -577,6 +577,12 @@ Supporting changes:
 - **Draft preservation**: before any rebuild, non-empty input texts are stashed per drawing and restored into the rebuilt boxes, so an auto-refresh can never eat a half-typed note; `commit()` empties its box pre-refresh so committed text isn't re-saved as a draft.
 - If `SceneChangeNotifier` is unavailable on an engine, it degrades to click-time self-heal only (traced to the Message Log).
 
+### v0.10.1 — auto-refresh un-filtered
+Live test of v0.10.0: notifier constructed ("active" trace) but a sub drag produced no refresh and no trace — the handler either never fired or was killed by the **column-name filter** (the signal likely carries internal column names that don't match the created name). Fix:
+- **Filter removed** — every `columnValuesChanged` schedules the (free-when-not-stale) signature check; the comparison is the gatekeeper, not the event source.
+- **Broader subscription** — `sceneChanged()` and `currentFrameChanged()` also feed the same debounced check; `currentFrameChanged` guarantees the panel reconciles on the next playhead touch even if an edit emits nothing else we know about.
+- **Diagnostics** — first `columnValuesChanged` logs the column names it carries (settles the internal-name question), and the auto-refresh trace names which signal triggered it.
+
 ---
 
 ## Sources
