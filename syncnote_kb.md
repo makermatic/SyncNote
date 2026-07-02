@@ -598,6 +598,13 @@ Two QoL fixes for long timelines (e.g. a note at frame 900 of 1000 while zoomed 
 
 Unproven-API notes: first live use of `QApplication.allWidgets()`, `metaObject().className()`, and `ensureWidgetVisible` in this project — all layered with fallbacks; worst case is today's behavior (no scroll), never breakage.
 
+### v0.11.0 live test → v0.12.0
+Part 1 (panel follow) **worked**; part 2 silently didn't: the log showed "scrollbar located" but never "scrolled" — the hunt grabbed the **wrong horizontal scrollbar**. The Timeline has at least two (layer-name column + frames area); the first-found one had range 0, and `scrollTimelineToFrame`'s `max <= 0` guard turned every jump into a silent no-op. Add to §7.3.5 instincts: *when hunting widgets by tree position, expect multiple plausible matches and pick by measurable property, not by first-found.*
+
+v0.12.0 fixes and additions:
+1. **Scrollbar picking by range** — collect all horizontal scrollbars under timeline-tagged parents, pick the one with the largest `maximum` (zoomed-in frames area wins by a huge margin); cache revalidated by range, not existence. All-zero ranges = scene fits on screen = correctly nothing to scroll. The action-list dump now fires only when *nothing* timeline-ish is found at all.
+2. **Scrub-landing highlight** — `highlightGroup()` flashes a 2px white border on the group card the ◀/▶ navigation landed on, auto-clearing after 2.5 s (single-shot QTimer, keep-alive pinned). Deliberately styling-only: the user asked for "dismiss on click anywhere", but that would require the same global event-filter machinery that made card-clicks flaky in v0.8.x — the timed fade answers the same question ("where did it go?") with zero risk. Scoped via `#snGroupHL` ID selector so the border doesn't cascade to the note-card QFrames inside; cleared refs on refresh (widget is torn down).
+
 ---
 
 ## Sources

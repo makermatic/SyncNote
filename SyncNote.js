@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.11.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.12.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -396,14 +396,24 @@ function SyncNote() {
   // zoom is untouched by construction (only the scroll position moves), and
   // we don't move anything if the frame is already visible.
 
-  // Locate the Timeline view's horizontal scrollbar in the widget tree:
-  // a horizontal QScrollBar whose parent chain mentions "timeline".
+  // Locate the Timeline view's FRAMES-AREA horizontal scrollbar.
+  //
+  // v0.11.0 gotcha: the Timeline has (at least) two horizontal scrollbars —
+  // the layer-name column's and the frames area's. Grabbing the first
+  // "timeline-ish" one found the wrong bar (range 0), and the scroll became
+  // a silent no-op. Now every candidate is collected and the one with the
+  // LARGEST scroll range wins — when zoomed in, that's the frames area by a
+  // huge margin. The cache is revalidated by range, not mere existence.
   function findTimelineScrollbar() {
     try {
-      if (tlScrollbar && tlScrollbar.visible !== undefined) return tlScrollbar;
-    } catch (e) { tlScrollbar = null; } // cached widget was destroyed
+      if (tlScrollbar && Number(tlScrollbar.maximum) > 0) return tlScrollbar;
+    } catch (e) { /* cached widget destroyed or unreadable */ }
+    tlScrollbar = null;
     try {
       var all = QApplication.allWidgets();
+      var candidates = 0;
+      var best = null;
+      var bestRange = 0;
       for (var i = 0; i < all.length; i++) {
         var w = all[i];
         try {
@@ -418,30 +428,45 @@ function SyncNote() {
           if (!isSB) continue;
           if (Number(w.orientation) !== 1) continue; // Qt.Horizontal
 
+          var isTimeline = false;
           var p = w;
           for (var hops = 0; p && hops < 8; hops++) {
             var tag = "";
             try { tag = String(p.objectName).toLowerCase(); } catch (e2) {}
             try { tag += " " + String(p.metaObject().className()).toLowerCase(); }
             catch (e3) {}
-            if (tag.indexOf("timeline") >= 0) {
-              tlScrollbar = w;
-              trace("Timeline scrollbar located (via '" + tag.replace(/^\s+/, "") + "')");
-              return w;
-            }
+            if (tag.indexOf("timeline") >= 0) { isTimeline = true; break; }
             p = p.parentWidget();
           }
-        } catch (e4) { /* try the next widget */ }
+          if (!isTimeline) continue;
+
+          candidates++;
+          var range = 0;
+          try { range = Number(w.maximum); } catch (e4) {}
+          if (range > bestRange) { bestRange = range; best = w; }
+        } catch (e5) { /* try the next widget */ }
       }
-    } catch (e5) { /* fall through */ }
+      if (best && bestRange > 0) {
+        tlScrollbar = best;
+        trace("Timeline frames scrollbar located (" + candidates +
+              " candidate(s); picked range " + bestRange + ")");
+        return best;
+      }
+      if (candidates > 0) {
+        // All ranges are 0: the whole scene fits on screen — nothing to
+        // scroll. Not an error; stay quiet and try again next jump.
+        return null;
+      }
+    } catch (e6) { /* fall through */ }
+    dumpTimelineActionsOnce(); // genuinely found nothing timeline-ish
     return null;
   }
 
   // Scroll the Timeline so `f` is visible (roughly centered); keep zoom.
   function scrollTimelineToFrame(f) {
     try {
-      var sb = findTimelineScrollbar();
-      if (!sb) { dumpTimelineActionsOnce(); return; }
+      var sb = findTimelineScrollbar(); // null = nothing to scroll / not found
+      if (!sb) return;
       var total = frame.numberOf();
       if (total < 2) return;
       var max = Number(sb.maximum);
@@ -752,6 +777,8 @@ function SyncNote() {
     var liveGroups = {};  // drawingName -> its group card in the current build
     var staleTimer = null;
     var lastSignal = "";  // which notifier signal requested the last check
+    var hlGroup = null;   // currently highlighted group card
+    var hlTimer = null;   // clears the highlight after a moment
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -780,6 +807,7 @@ function SyncNote() {
       } catch (e) { /* drafts are best-effort */ }
       liveInputs = {};
       liveGroups = {};
+      hlGroup = null; // its widget is about to be torn down
 
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
@@ -1001,6 +1029,37 @@ function SyncNote() {
       } catch (e) { /* leave the panel scroll as-is */ }
     }
 
+    // Flash a white border on the card the arrow keys landed on, so it's
+    // obvious where navigation went; fades automatically. Deliberately
+    // styling-only (no event filters — see the v0.8.x card-click saga);
+    // the #id selector keeps the border off the note cards inside.
+    function highlightGroup(drawingName) {
+      clearHighlight();
+      var w = liveGroups[drawingName];
+      if (!w) return;
+      try {
+        w.objectName = "snGroupHL";
+        w.styleSheet = "#snGroupHL { border: 2px solid #ffffff; border-radius: 3px; }";
+        hlGroup = w;
+      } catch (e) { return; } // styling refused; nothing to clean up
+      try {
+        if (!hlTimer) {
+          try { hlTimer = new QTimer(dlg); }
+          catch (e0) { hlTimer = new QTimer(); }
+          hlTimer.singleShot = true;
+          hlTimer.timeout.connect(clearHighlight);
+          g_snKeepAlivePanel.push(hlTimer); // survives refreshes
+        }
+        hlTimer.stop();
+        hlTimer.start(2500);
+      } catch (e) { /* highlight just stays until the next one */ }
+    }
+
+    function clearHighlight() {
+      try { if (hlGroup) hlGroup.styleSheet = ""; } catch (e) {}
+      hlGroup = null;
+    }
+
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
     // Falls back to a fixed 2-line height if document metrics aren't bound.
     function sizeNoteInput(edit) {
@@ -1067,6 +1126,7 @@ function SyncNote() {
         frame.setCurrent(best);
         scrollTimelineToFrame(best);     // Timeline follows the jump
         ensureGroupVisible(bestDrawing); // ...and so does the panel
+        highlightGroup(bestDrawing);     // ...and shows where it landed
       }
     }
     prevBtn.clicked.connect(function () { scrubToNoteFrame(-1); });
