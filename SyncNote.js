@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.12.2";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.13.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -71,9 +71,17 @@ function SyncNote() {
     model.syncNoteElementId = layer.elementId;
     saveModel(model);
 
-    // Per the brief: running the script creates a drawing substitution
-    // wherever the timeline playhead currently is.
-    ensureSubstitutionAtFrame(layer, frame.current());
+    // First use ONLY (layer has no subs yet): create a starter substitution
+    // at the playhead so a new user has something to type into. On every
+    // later launch, opening the panel creates nothing — the Add Note button
+    // is the only thing that makes subs (v0.13.0; launching on a random
+    // frame used to leave stray empty subs).
+    var existingTimings = [];
+    try { existingTimings = column.getDrawingTimings(layer.column) || []; }
+    catch (e) { /* treat as first use */ }
+    if (existingTimings.length === 0) {
+      ensureSubstitutionAtFrame(layer, frame.current());
+    }
 
     revealLayer(layer.node); // select it so it's obvious in Timeline/Node View
 
@@ -632,6 +640,35 @@ function SyncNote() {
     }
   }
 
+  // Remove a substitution's exposure from the timeline, as if it was never
+  // added: every frame showing it is re-keyed to the drawing that was
+  // exposed just before its span (so earlier exposure extends across the
+  // gap), or cleared when nothing came before. One undo step. The drawing
+  // file stays in the element (harmless; hidden by collectGroups once it
+  // has no exposure and no notes).
+  function removeSubstitution(layer, drawingName) {
+    scene.beginUndoRedoAccum("SyncNote: remove substitution");
+    try {
+      var n = frame.numberOf();
+      var prev = ""; // drawing exposed just before the current span
+      for (var f = 1; f <= n; f++) {
+        var cur = column.getEntry(layer.column, 1, f);
+        if (cur === drawingName) {
+          column.setEntry(layer.column, 1, f, prev); // "" clears the cell
+          // prev intentionally NOT updated: keep extending the pre-span
+          // drawing over the whole span (and over any redundant keys).
+        } else {
+          prev = cur;
+        }
+      }
+      scene.endUndoRedoAccum();
+      return true;
+    } catch (e) {
+      scene.endUndoRedoAccum();
+      return false;
+    }
+  }
+
   // Every drawing in the element, plus any drawing that has notes,
   // each with its first exposed frame (-1 if not currently exposed).
   function collectGroups(layer, model) {
@@ -643,15 +680,19 @@ function SyncNote() {
       var dn = timings[i];
       if (seen[dn]) continue;
       seen[dn] = true;
-      groups.push({ drawing: dn, frame: firstFrameOfDrawing(layer.column, dn) });
+      var ff = firstFrameOfDrawing(layer.column, dn);
+      // A drawing with no exposure AND no notes carries no information —
+      // hide it instead of cluttering the list with "(not exposed)" cards.
+      if (ff < 0 && notesFor(model, layer.elementId, dn).length === 0) continue;
+      groups.push({ drawing: dn, frame: ff });
     }
 
     var byEl = model.notesByDrawing[String(layer.elementId)] || {};
     for (var key in byEl) {
-      if (byEl.hasOwnProperty(key) && !seen[key]) {
-        seen[key] = true;
-        groups.push({ drawing: key, frame: firstFrameOfDrawing(layer.column, key) });
-      }
+      if (!byEl.hasOwnProperty(key) || seen[key]) continue;
+      if (!byEl[key] || byEl[key].length === 0) continue; // no actual notes
+      seen[key] = true;
+      groups.push({ drawing: key, frame: firstFrameOfDrawing(layer.column, key) });
     }
 
     groups.sort(function (a, b) {
@@ -909,25 +950,49 @@ function SyncNote() {
       liveGroups[drawingName] = box; // for scrub-to-card panel scrolling
       var v = new QVBoxLayout(box);
 
-      // Header: green clickable "Frame 009" link (padded to scene length
-      // digits). Link-based navigation is deliberate: card-wide click
-      // filters worked but felt unreliable (user call, v0.8.3) — links are
-      // handled natively by QLabel with no GC/event-propagation caveats.
+      var notes = notesFor(model, layer.elementId, drawingName);
+
+      // Header row: green clickable "Frame 009" link (padded to scene
+      // length digits) — plus, when the group has NO notes, a remove
+      // button that deletes the sub itself. Link-based navigation is
+      // deliberate: card-wide click filters worked but felt unreliable
+      // (user call, v0.8.3) — links are handled natively by QLabel.
+      var headRowW = new QWidget();
+      var headRow = new QHBoxLayout(headRowW);
+      headRow.setContentsMargins(0, 0, 0, 0);
       if (frameNo > 0) {
         var head = new QLabel(
           '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
           padFrame(frameNo) + "</a>");
         head.toolTip = "Go to Frame " + frameNo;
         head.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
-        addW(v, head);
+        addW(headRow, head, 1);
       } else {
         var deadHead = new QLabel("(not exposed on timeline)  •  Sub " + drawingName);
         deadHead.styleSheet = "color: gray;";
-        addW(v, deadHead);
+        addW(headRow, deadHead, 1);
       }
+      if (notes.length === 0) {
+        // Only noteless groups are removable — a sub carrying notes can't
+        // be nuked by accident; delete its notes first.
+        var rmBtn = new QPushButton("✕");
+        rmBtn.toolTip = "Remove this sub (it has no notes)";
+        rmBtn.maximumWidth = 28;
+        rmBtn.clicked.connect(function () {
+          if (removeSubstitution(layer, drawingName)) {
+            try {
+              var eid = String(layer.elementId);
+              if (model.notesByDrawing[eid]) delete model.notesByDrawing[eid][drawingName];
+            } catch (e) { /* model tidy-up is best-effort */ }
+            saveModel(model);
+            refresh();
+          }
+        });
+        addW(headRow, rmBtn);
+      }
+      addW(v, headRowW);
 
       // Existing notes.
-      var notes = notesFor(model, layer.elementId, drawingName);
       for (var i = 0; i < notes.length; i++) {
         addW(v, makeNoteCard(drawingName, frameNo, notes[i]));
       }

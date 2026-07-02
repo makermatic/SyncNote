@@ -610,6 +610,12 @@ Confirmed working in live test (both parts + highlight).
 ### v0.12.1 — scrub buttons gray out at the ends
 `updateScrubButtons()` disables ◀/▶ (`btn.enabled = false`; Qt grays them natively) when no note frame exists strictly before/after the playhead — same `collectGroups` data as the jump, so state and behavior can't disagree. Update triggers: end of every `refresh()`, immediately after scrub/link jumps, and the `currentFrameChanged`-fed debounced tick for manual playhead moves (piggybacks the staleness timer; on a non-stale tick it updates buttons instead of rebuilding). Known trade-off: during continuous playback the debounce keeps postponing, so buttons settle ~300 ms after playback stops.
 
+### v0.13.0 — launch means open, not create (+ removable empty subs)
+User-reported oversight: every launch created a sub at the playhead (a literal reading of the original brief, correct only for first use), leaving stray empty subs the panel couldn't delete. Three changes:
+1. **Launch creates a sub only on true first use** — when `column.getDrawingTimings()` is empty. Otherwise launching just opens the panel; Add Note is the only sub-creator.
+2. **Noteless, unexposed drawings are hidden** from the list (`collectGroups` skips them, and skips empty note arrays left behind by deletions) — they carry no information.
+3. **Removable empty groups** — groups with zero notes get a ✕ that calls `removeSubstitution()`: walk frames 1..N tracking the last non-target drawing (`prev`); every frame showing the target is re-keyed to `prev` ("" clears when nothing came before), so earlier exposure extends across the gap as if the sub never existed. `prev` deliberately not updated inside the span — that also flattens redundant mid-span keys. One undo step. Note-bearing subs are not removable (delete notes first). The drawing file stays in the element, hidden by rule 2.
+
 ### v0.12.2 — Add Note focuses the new group; thinner highlight
 - `refresh(focusDrawing)` optional param: when set (used by the Add Note button), the rebuild **skips the scroll-position restore** and instead scrolls to + flashes that group (`focusGroup()` — applied immediately and again at 60 ms, because the restore path's own delayed timer taught us post-rebuild scrolls get clamped before layout settles; the two mechanisms are mutually exclusive per refresh so they can't fight).
 - Highlight border 2px → 1px (user taste).
