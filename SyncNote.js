@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.12.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.12.2";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -790,7 +790,10 @@ function SyncNote() {
       return parts.join("|");
     }
 
-    function refresh() {
+    // Optional focusDrawing: after the rebuild, scroll to and highlight that
+    // group instead of restoring the previous scroll position (used by the
+    // Add Note button so the new sub is immediately visible).
+    function refresh(focusDrawing) {
       // Rebuilding the list resets the scroll position — remember it so
       // adding a note deep in the list doesn't yank the view around.
       var savedScroll = 0;
@@ -826,8 +829,31 @@ function SyncNote() {
       addW(listLayout, new QWidget(), 1);
 
       shownSig = groupsSignature(); // what the panel now reflects
-      restoreScroll(savedScroll);
+      if (focusDrawing && liveGroups[focusDrawing]) {
+        focusGroup(focusDrawing); // don't restore old scroll — go to the card
+      } else {
+        restoreScroll(savedScroll);
+      }
       updateScrubButtons();
+    }
+
+    // Scroll to a group card and flash it — applied twice like
+    // restoreScroll, because right after a rebuild the list hasn't been
+    // measured yet and the first scroll can be clamped.
+    function focusGroup(drawingName) {
+      ensureGroupVisible(drawingName);
+      highlightGroup(drawingName);
+      try {
+        var t;
+        try { t = new QTimer(dlg); }
+        catch (e0) { t = new QTimer(); }
+        g_snKeepAlive.push(t);
+        t.singleShot = true;
+        t.timeout.connect(function () {
+          try { ensureGroupVisible(drawingName); } catch (e) {}
+        });
+        t.start(60);
+      } catch (e) { /* immediate attempt above already did its best */ }
     }
 
     // Gray out ◀/▶ when there's no note strictly before/after the playhead.
@@ -1062,7 +1088,7 @@ function SyncNote() {
       if (!w) return;
       try {
         w.objectName = "snGroupHL";
-        w.styleSheet = "#snGroupHL { border: 2px solid #ffffff; border-radius: 3px; }";
+        w.styleSheet = "#snGroupHL { border: 1px solid #ffffff; border-radius: 3px; }";
         hlGroup = w;
       } catch (e) { return; } // styling refused; nothing to clean up
       try {
@@ -1129,7 +1155,7 @@ function SyncNote() {
     addBtn.clicked.connect(function () {
       var f = frame.current();
       var drawingName = ensureSubstitutionAtFrame(layer, f);
-      if (drawingName) refresh(); // group appears; type the note in its field
+      if (drawingName) refresh(drawingName); // scroll to + flash the new group
     });
 
     // Scrub the playhead between note frames, anchored to wherever the

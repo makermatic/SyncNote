@@ -610,6 +610,10 @@ Confirmed working in live test (both parts + highlight).
 ### v0.12.1 — scrub buttons gray out at the ends
 `updateScrubButtons()` disables ◀/▶ (`btn.enabled = false`; Qt grays them natively) when no note frame exists strictly before/after the playhead — same `collectGroups` data as the jump, so state and behavior can't disagree. Update triggers: end of every `refresh()`, immediately after scrub/link jumps, and the `currentFrameChanged`-fed debounced tick for manual playhead moves (piggybacks the staleness timer; on a non-stale tick it updates buttons instead of rebuilding). Known trade-off: during continuous playback the debounce keeps postponing, so buttons settle ~300 ms after playback stops.
 
+### v0.12.2 — Add Note focuses the new group; thinner highlight
+- `refresh(focusDrawing)` optional param: when set (used by the Add Note button), the rebuild **skips the scroll-position restore** and instead scrolls to + flashes that group (`focusGroup()` — applied immediately and again at 60 ms, because the restore path's own delayed timer taught us post-rebuild scrolls get clamped before layout settles; the two mechanisms are mutually exclusive per refresh so they can't fight).
+- Highlight border 2px → 1px (user taste).
+
 ---
 
 ## Sources
