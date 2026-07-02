@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.12.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.12.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -827,6 +827,28 @@ function SyncNote() {
 
       shownSig = groupsSignature(); // what the panel now reflects
       restoreScroll(savedScroll);
+      updateScrubButtons();
+    }
+
+    // Gray out ◀/▶ when there's no note strictly before/after the playhead.
+    // Uses the same data as the jump logic, so button state and jump
+    // behavior can never disagree.
+    function updateScrubButtons() {
+      try {
+        var f = frame.current();
+        var groups = collectGroups(layer, model);
+        var hasPrev = false;
+        var hasNext = false;
+        for (var i = 0; i < groups.length; i++) {
+          var g = groups[i].frame;
+          if (g <= 0) continue;
+          if (g < f) hasPrev = true;
+          if (g > f) hasNext = true;
+          if (hasPrev && hasNext) break;
+        }
+        prevBtn.enabled = hasPrev;
+        nextBtn.enabled = hasNext;
+      } catch (e) { /* leave buttons as-is */ }
     }
 
     // Put the scrollbar back where it was: once immediately, and once after
@@ -1004,7 +1026,8 @@ function SyncNote() {
           frame.setCurrent(f);
           scrollTimelineToFrame(f); // bring the sub into the Timeline view
         }
-        if (f !== shownFrame) refresh(); // display was stale
+        if (f !== shownFrame) refresh(); // display was stale (also updates ◀/▶)
+        else updateScrubButtons();
       };
     }
 
@@ -1127,6 +1150,7 @@ function SyncNote() {
         scrollTimelineToFrame(best);     // Timeline follows the jump
         ensureGroupVisible(bestDrawing); // ...and so does the panel
         highlightGroup(bestDrawing);     // ...and shows where it landed
+        updateScrubButtons();            // instant gray-out at the ends
       }
     }
     prevBtn.clicked.connect(function () { scrubToNoteFrame(-1); });
@@ -1149,7 +1173,9 @@ function SyncNote() {
               if (groupsSignature() !== shownSig) {
                 trace("timeline changed under the panel (via " + lastSignal +
                       ") — auto-refreshing");
-                refresh();
+                refresh(); // refresh() updates the scrub buttons too
+              } else {
+                updateScrubButtons(); // playhead may have moved past the ends
               }
             } catch (e) { /* never break the session */ }
           });

@@ -605,6 +605,11 @@ v0.12.0 fixes and additions:
 1. **Scrollbar picking by range** — collect all horizontal scrollbars under timeline-tagged parents, pick the one with the largest `maximum` (zoomed-in frames area wins by a huge margin); cache revalidated by range, not existence. All-zero ranges = scene fits on screen = correctly nothing to scroll. The action-list dump now fires only when *nothing* timeline-ish is found at all.
 2. **Scrub-landing highlight** — `highlightGroup()` flashes a 2px white border on the group card the ◀/▶ navigation landed on, auto-clearing after 2.5 s (single-shot QTimer, keep-alive pinned). Deliberately styling-only: the user asked for "dismiss on click anywhere", but that would require the same global event-filter machinery that made card-clicks flaky in v0.8.x — the timed fade answers the same question ("where did it go?") with zero risk. Scoped via `#snGroupHL` ID selector so the border doesn't cascade to the note-card QFrames inside; cleared refs on refresh (widget is torn down).
 
+Confirmed working in live test (both parts + highlight).
+
+### v0.12.1 — scrub buttons gray out at the ends
+`updateScrubButtons()` disables ◀/▶ (`btn.enabled = false`; Qt grays them natively) when no note frame exists strictly before/after the playhead — same `collectGroups` data as the jump, so state and behavior can't disagree. Update triggers: end of every `refresh()`, immediately after scrub/link jumps, and the `currentFrameChanged`-fed debounced tick for manual playhead moves (piggybacks the staleness timer; on a non-stale tick it updates buttons instead of rebuilding). Known trade-off: during continuous playback the debounce keeps postponing, so buttons settle ~300 ms after playback stops.
+
 ---
 
 ## Sources
