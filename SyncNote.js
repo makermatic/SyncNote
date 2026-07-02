@@ -33,7 +33,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.8.4";           // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.9.0";           // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -61,8 +61,7 @@ function SyncNote() {
       MessageBox.information("SyncNote could not create or find a Notes layer.");
       return;
     }
-    var connectStatus = attachToComposite(layer.node); // wire into render + report
-    logPortMap(); // backburner diagnostics for the front-port issue -> Message Log
+    var connectStatus = connectNotesNode(layer.node); // wire + verify by RENDER ORDER
 
     model.syncNoteElementId = layer.elementId;
     saveModel(model);
@@ -250,90 +249,116 @@ function SyncNote() {
   // Connect the READ node to the scene's top-level Composite so it renders.
   // Port 0 with mayAddInputPort=true inserts at the LEFTMOST input, which the
   // Composite renders on top — exactly where review notes belong.
-  // Returns a human-readable status string shown in the panel's status bar,
-  // so a failed connection is VISIBLE instead of silent.
-  function attachToComposite(readPath) {
+  // ---- Connection, redone (v0.9.0) ----------------------------------------
+  //
+  // Every earlier attempt verified success by PORT INDEX and trusted the docs
+  // ("leftmost port renders in front") — and kept disagreeing with what the
+  // user saw in the layer stack. This version verifies against the actual
+  // RENDER ORDER via compositionOrder.buildDefaultCompositionOrder(), which
+  // is literally "the Timeline view's composition order" (frontmost first).
+  // It tries a reorder strategy, MEASURES, tries the opposite strategy if
+  // needed, and never claims success the measurement doesn't back.
+  function connectNotesNode(readPath) {
     var comp = findTopComposite();
     if (!comp) return "no Composite node in scene";
 
-    var already = false;
-    try { already = node.numberOfOutputLinks(readPath, 0) > 0; }
-    catch (e) { /* older API variant; assume unwired */ }
-
-    if (!already) {
-      try {
-        node.link(readPath, 0, comp, 0, false, true); // insert new input port
-      } catch (e) {
-        // Exact-arg binding refused the 6-arg overload; append to a fresh port.
-        try { node.link(readPath, 0, comp, node.numberOfInputPorts(comp)); }
-        catch (e2) { /* verified below */ }
-      }
-      // Tidy: park the node above the composite in the Node View.
+    // 1) Make sure it's connected at all.
+    var linked = false;
+    try { linked = node.numberOfOutputLinks(readPath, 0) > 0; } catch (e) {}
+    if (!linked) {
+      try { node.link(readPath, 0, comp, node.numberOfInputPorts(comp), false, true); }
+      catch (e) { try { node.link(readPath, 0, comp, 0, false, true); } catch (e2) {} }
       try {
         node.setCoord(readPath, node.coordX(comp) - 60, node.coordY(comp) - 80);
       } catch (e) { /* cosmetic only */ }
+      try { linked = node.numberOfOutputLinks(readPath, 0) > 0; } catch (e) {}
+      if (!linked) return "NOT connected — plug the Notes node into your Composite";
     }
 
-    // The Composite renders its LEFTMOST input port in FRONT — make sure the
-    // notes draw over the artwork, even if we (or the user) attached at back.
-    var inFront = bringToFrontOfComposite(readPath, comp);
+    // 2) Measure the truth.
+    var rank = renderRank(readPath);
+    trace("initial render rank: " + rank + " (0 = frontmost layer)");
+    if (rank === 0) return "frontmost layer ✓";
+    if (rank === -2) return "connected — render order unreadable (see Message Log)";
 
+    // 3) Not frontmost: try both port orders, measuring after each. Which
+    // end of the port row is "front" has been ambiguous all along — so let
+    // the measurement decide instead of assuming.
+    var strategies = [
+      { notesFirst: true,  label: "Notes on first port" },
+      { notesFirst: false, label: "Notes on last port" }
+    ];
+    for (var s = 0; s < strategies.length; s++) {
+      reorderComposite(readPath, comp, strategies[s].notesFirst);
+      rank = renderRank(readPath);
+      trace("after reorder (" + strategies[s].label + "): rank " + rank);
+      if (rank === 0) return "frontmost layer ✓ (" + strategies[s].label + ")";
+    }
+
+    // 4) Neither order made it frontmost — the reordered composite is
+    // probably not the one that decides stacking in this scene. Dump full
+    // diagnostics and say so; do not pretend.
+    logCompositionOrder();
+    logPortMap();
+    return "renders BEHIND " + rank + " layer(s) — diagnostics in Message Log";
+  }
+
+  // Notes' place in the real render stack: 0 = frontmost drawing layer,
+  // N = that many drawing layers render in front of it, -2 = unmeasurable.
+  // Only READ nodes are counted as "layers" — effects/pegs/composites in the
+  // stack don't compete with Notes for visibility.
+  function renderRank(readPath) {
     try {
-      if (node.numberOfOutputLinks(readPath, 0) > 0) {
-        return inFront
-          ? "connected to " + shortName(comp) + " (in front)"
-          : "connected — for notes in front, move its cable to the LEFTMOST " +
-            shortName(comp) + " port";
+      var order = compositionOrder.buildDefaultCompositionOrder();
+      if (!order || order.length === undefined) return -2;
+      var ahead = 0;
+      for (var i = 0; i < order.length; i++) {
+        var n = "";
+        try { n = String(order[i].node); } catch (e0) { continue; }
+        if (n === readPath) return ahead;
+        try { if (node.type(n) === "READ") ahead++; } catch (e1) {}
       }
-      return "NOT connected — plug the Notes node into your Composite";
+      return -2; // Notes absent from the composition — not rendering at all
     } catch (e) {
-      return "connection state unknown";
+      return -2; // API not available in this build
     }
   }
 
-  // Make the Notes node the composite's LEFTMOST input (= rendered in front).
-  //
-  // GOTCHA (proven by live testing): node.link(..., dstPort, false, true)
-  // does NOT insert at dstPort — when the port is occupied, mayAddInputPort
-  // just APPENDS a new port at the right end (= back). There is no direct
-  // "insert at left" call, but composite ports fill left-to-right in
-  // connection order — so we rebuild the whole port order with Notes first.
-  // No-op when Notes is already frontmost; single undo step otherwise.
-  function bringToFrontOfComposite(readPath, comp) {
+  // Rebuild the composite's input connections with Notes either first or
+  // last (ports fill in connection order). Snapshot preserves each source's
+  // own output port; whole rewire is one undo step.
+  function reorderComposite(readPath, comp, notesFirst) {
     try {
-      // Snapshot current sources in port order (keep their output ports).
       var sources = [];
       var ports = node.numberOfInputPorts(comp);
       for (var i = 0; i < ports; i++) {
         var srcPath = "";
         var srcPort = 0;
         try {
-          var info = node.srcNodeInfo(comp, i); // { node, port } where available
-          if (info) { srcPath = info.node; srcPort = info.port; }
-        } catch (e) { /* older API */ }
-        if (!srcPath) { try { srcPath = node.srcNode(comp, i); } catch (e2) {} }
+          var info = node.srcNodeInfo(comp, i);
+          if (info) { srcPath = String(info.node); srcPort = Number(info.port) || 0; }
+        } catch (e0) { /* older API */ }
+        if (!srcPath) { try { srcPath = node.srcNode(comp, i); } catch (e1) {} }
         if (srcPath && srcPath !== "") sources.push({ node: srcPath, port: srcPort });
       }
-
-      if (sources.length === 0) return false;
-      if (sources[0].node === readPath) return true; // already frontmost
 
       var mine = -1;
       for (var s = 0; s < sources.length; s++) {
         if (sources[s].node === readPath) { mine = s; break; }
       }
-      if (mine < 0) return false; // Notes isn't on this composite
+      if (mine < 0) return;
 
-      scene.beginUndoRedoAccum("SyncNote: bring Notes to front");
+      var order = [];
+      for (var k = 0; k < sources.length; k++) {
+        if (k !== mine) order.push(sources[k]);
+      }
+      if (notesFirst) order.unshift(sources[mine]);
+      else order.push(sources[mine]);
+
+      scene.beginUndoRedoAccum("SyncNote: reorder composite");
       try {
-        // Unlink everything (high to low so indices stay valid)...
         for (var p = ports - 1; p >= 0; p--) {
           try { node.unlink(comp, p); } catch (e) { /* empty port */ }
-        }
-        // ...and relink with Notes FIRST, everyone else in original order.
-        var order = [sources[mine]];
-        for (var k = 0; k < sources.length; k++) {
-          if (k !== mine) order.push(sources[k]);
         }
         for (var j = 0; j < order.length; j++) {
           try {
@@ -347,11 +372,31 @@ function SyncNote() {
       } catch (e) {
         scene.endUndoRedoAccum();
       }
-      return node.srcNode(comp, 0) === readPath;
+    } catch (e) { /* leave the scene as-is */ }
+  }
+
+  function trace(msg) {
+    try { MessageLog.trace("SyncNote " + SN_VERSION + ": " + msg); } catch (e) {}
+  }
+
+  // Full composition order dump (frontmost first) for failure diagnostics.
+  function logCompositionOrder() {
+    try {
+      var order = compositionOrder.buildDefaultCompositionOrder();
+      var lines = ["composition order (frontmost first):"];
+      for (var i = 0; i < order.length; i++) {
+        var n = "?";
+        try { n = String(order[i].node); } catch (e0) {}
+        var t = "";
+        try { t = node.type(n); } catch (e1) {}
+        lines.push("   " + i + ": " + n + (t ? "  [" + t + "]" : ""));
+      }
+      trace(lines.join("\n"));
     } catch (e) {
-      return false;
+      trace("compositionOrder API unavailable in this build");
     }
   }
+
 
   // Diagnostic for the status bar: which composite input port Notes is on.
   // Port 0 should be the LEFTMOST (front). If the readout says port 0 but the

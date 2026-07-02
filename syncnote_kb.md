@@ -546,6 +546,20 @@ v0.8.3 = v0.8.0's navigation (green clickable `Frame 009` header + `Sub N` links
 
 ---
 
+## 21. Implementation log — v0.9.0 (connection redone: verify by render order)
+
+The composite-cable saga's root flaw, finally named (with the user's help — "it's just the layer stack"): every attempt verified success by **port index** and the docs' "leftmost port renders front" claim, then argued with what the user saw in the layer stack. v0.9.0 stops inferring and **measures the render order directly**:
+
+- **`compositionOrder.buildDefaultCompositionOrder()`** (never used before; found via the class index) returns the actual composition — *"the Timeline view's composition order"* — frontmost node first. This is the oracle.
+- **`renderRank(readPath)`**: counts how many READ nodes render in front of Notes (0 = frontmost drawing layer; effects/pegs don't count; `-2` = unmeasurable).
+- **`connectNotesNode()`** replaces `attachToComposite` + `bringToFrontOfComposite`: ensure linked → measure → if not frontmost, reorder with **Notes first**, re-measure → if still not, reorder with **Notes last** (covers the reversed port-semantics case), re-measure → report only what the measurement confirms. Status bar shows "frontmost layer ✓ (which strategy)" or "renders BEHIND N layer(s) — diagnostics in Message Log".
+- On failure, `logCompositionOrder()` + `logPortMap()` dump everything needed to the Message Log — if neither port order changes the rank, the reordered composite is not the one deciding stacking in that scene (nested composites), and the dump will show which node is.
+- All rewiring remains one undo step; each step traced via `trace()`.
+
+Design lesson for §7.3.5: **when the API and the user's eyes disagree, find the API that measures what the user is actually looking at.**
+
+---
+
 ## Sources
 - column class (getEntry/setEntry/getElementIdOfDrawing/add/getDrawingTimings): https://docs.toonboom.com/help/harmony-22/scripting/script/classcolumn.html
 - element class (add/id/getNameById/physicalName): https://docs.toonboom.com/help/harmony-22/scripting/script/classelement.html
