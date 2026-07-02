@@ -582,6 +582,21 @@ Live test of v0.10.0: notifier constructed ("active" trace) but a sub drag produ
 - **Filter removed** — every `columnValuesChanged` schedules the (free-when-not-stale) signature check; the comparison is the gatekeeper, not the event source.
 - **Broader subscription** — `sceneChanged()` and `currentFrameChanged()` also feed the same debounced check; `currentFrameChanged` guarantees the panel reconciles on the next playhead touch even if an edit emits nothing else we know about.
 - **Diagnostics** — first `columnValuesChanged` logs the column names it carries (settles the internal-name question), and the auto-refresh trace names which signal triggered it.
+- **Confirmed working in live test**: sub drags auto-refresh the header within ~a second; the triggering signal on Harmony 22 was `currentFrameChanged` (the belt-and-suspenders subscription), not `columnValuesChanged`.
+
+---
+
+## 23. Implementation log — v0.11.0 (navigation that follows you)
+
+Two QoL fixes for long timelines (e.g. a note at frame 900 of 1000 while zoomed in):
+
+1. **Panel follows the scrub buttons.** `liveGroups` maps `drawing → group card` per rebuild; after ◀/▶ jumps, `ensureGroupVisible()` scrolls the panel to the target card via `QScrollArea.ensureWidgetVisible(w, 40, 120)` with a 1-arg retry and a manual scrollbar-math fallback (`card.pos.y` centered in `viewport().height`).
+2. **Timeline follows every jump** (scrubs *and* Frame/Sub links). `frame.setCurrent()` doesn't scroll the Timeline view and no documented action does, so `scrollTimelineToFrame()` drives the Timeline's own horizontal scrollbar:
+   - `findTimelineScrollbar()` scans `QApplication.allWidgets()` for a horizontal `QScrollBar` whose parent chain (≤8 hops) has "timeline" in its `objectName`/`className`; cached per launch, revalidated in case the view was closed.
+   - Frame ↔ scrollbar mapping: content span = `maximum + pageStep`; visible frame range ≈ `value/span·total … (value+page)/span·total`. **If the frame is already visible, don't move** (preserves the user's view); otherwise center: `value = (f-0.5)/total·span − page/2`, clamped. Zoom is untouched by construction — only the scroll position changes.
+   - If the scrollbar hunt fails on some build, `dumpTimelineActionsOnce()` logs `Action.getActionList("timelineView")` filtered to frame/scroll/center/focus entries — round-two diagnostics, same workflow that cracked the cable issue.
+
+Unproven-API notes: first live use of `QApplication.allWidgets()`, `metaObject().className()`, and `ensureWidgetVisible` in this project — all layered with fallbacks; worst case is today's behavior (no scroll), never breakage.
 
 ---
 

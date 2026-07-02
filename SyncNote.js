@@ -35,12 +35,14 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.10.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.11.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
   var LAYER_NAME    = "Notes";           // default name for the review layer
   var DLG_NAME      = "SyncNoteDialog";  // objectName used to find/replace open panels
+  var tlScrollbar     = null;  // cached Timeline horizontal scrollbar (per launch)
+  var tlActionsDumped = false; // one-time diagnostic guard
   var LINK_STYLE    = "color:#4CAF50; text-decoration:none;"; // green, SyncSketch-ish
 
   // ---------------------------------------------------------------------
@@ -386,6 +388,105 @@ function SyncNote() {
     try { MessageLog.trace("SyncNote " + SN_VERSION + ": " + msg); } catch (e) {}
   }
 
+  // ---- Timeline follow (v0.11.0) -----------------------------------------
+  // frame.setCurrent() moves the playhead but does NOT scroll the Timeline
+  // view, so a jump to an off-screen frame leaves the user staring at the
+  // wrong part of the timeline. No documented action does "center on current
+  // frame", so we drive the Timeline's own horizontal scrollbar directly:
+  // zoom is untouched by construction (only the scroll position moves), and
+  // we don't move anything if the frame is already visible.
+
+  // Locate the Timeline view's horizontal scrollbar in the widget tree:
+  // a horizontal QScrollBar whose parent chain mentions "timeline".
+  function findTimelineScrollbar() {
+    try {
+      if (tlScrollbar && tlScrollbar.visible !== undefined) return tlScrollbar;
+    } catch (e) { tlScrollbar = null; } // cached widget was destroyed
+    try {
+      var all = QApplication.allWidgets();
+      for (var i = 0; i < all.length; i++) {
+        var w = all[i];
+        try {
+          var isSB = false;
+          try { isSB = (w instanceof QScrollBar); } catch (e0) {}
+          if (!isSB) {
+            try {
+              isSB = String(w.metaObject().className())
+                       .toLowerCase().indexOf("scrollbar") >= 0;
+            } catch (e1) {}
+          }
+          if (!isSB) continue;
+          if (Number(w.orientation) !== 1) continue; // Qt.Horizontal
+
+          var p = w;
+          for (var hops = 0; p && hops < 8; hops++) {
+            var tag = "";
+            try { tag = String(p.objectName).toLowerCase(); } catch (e2) {}
+            try { tag += " " + String(p.metaObject().className()).toLowerCase(); }
+            catch (e3) {}
+            if (tag.indexOf("timeline") >= 0) {
+              tlScrollbar = w;
+              trace("Timeline scrollbar located (via '" + tag.replace(/^\s+/, "") + "')");
+              return w;
+            }
+            p = p.parentWidget();
+          }
+        } catch (e4) { /* try the next widget */ }
+      }
+    } catch (e5) { /* fall through */ }
+    return null;
+  }
+
+  // Scroll the Timeline so `f` is visible (roughly centered); keep zoom.
+  function scrollTimelineToFrame(f) {
+    try {
+      var sb = findTimelineScrollbar();
+      if (!sb) { dumpTimelineActionsOnce(); return; }
+      var total = frame.numberOf();
+      if (total < 2) return;
+      var max = Number(sb.maximum);
+      var page = Number(sb.pageStep);
+      var span = max + page; // full content width in scrollbar units
+      if (span <= 0 || max <= 0) return; // nothing to scroll (fits on screen)
+
+      // Approximate currently-visible frame range; if f is comfortably
+      // inside it, leave the user's view alone.
+      var val = Number(sb.value);
+      var visStart = (val / span) * total;
+      var visEnd = ((val + page) / span) * total;
+      if (f >= visStart + 1 && f <= visEnd - 1) return;
+
+      var target = Math.round(((f - 0.5) / total) * span - page / 2);
+      var min = Number(sb.minimum);
+      if (target < min) target = min;
+      if (target > max) target = max;
+      sb.value = target;
+      trace("Timeline scrolled to show frame " + f);
+    } catch (e) { /* navigation must never break */ }
+  }
+
+  // Round-two diagnostics if the scrollbar hunt fails on some build: what
+  // frame/scroll/center-ish actions does the Timeline view actually offer?
+  function dumpTimelineActionsOnce() {
+    if (tlActionsDumped) return;
+    tlActionsDumped = true;
+    try {
+      var acts = Action.getActionList("timelineView");
+      var hits = [];
+      for (var i = 0; i < acts.length; i++) {
+        var a = String(acts[i]).toLowerCase();
+        if (a.indexOf("frame") >= 0 || a.indexOf("scroll") >= 0 ||
+            a.indexOf("center") >= 0 || a.indexOf("focus") >= 0) {
+          hits.push(String(acts[i]));
+        }
+      }
+      trace("Timeline scrollbar NOT found. timelineView actions (filtered): " +
+            (hits.length ? hits.join(", ") : "(none matched)"));
+    } catch (e) {
+      trace("Timeline scrollbar NOT found; Action.getActionList failed (" + e + ")");
+    }
+  }
+
   // Full composition order dump (frontmost first) for failure diagnostics.
   function logCompositionOrder() {
     try {
@@ -648,6 +749,7 @@ function SyncNote() {
     var shownSig = "";    // drawing:frame signature of what's displayed
     var drafts = {};      // unsaved input text, preserved across rebuilds
     var liveInputs = {};  // drawingName -> its QTextEdit in the current build
+    var liveGroups = {};  // drawingName -> its group card in the current build
     var staleTimer = null;
     var lastSignal = "";  // which notifier signal requested the last check
 
@@ -677,6 +779,7 @@ function SyncNote() {
         }
       } catch (e) { /* drafts are best-effort */ }
       liveInputs = {};
+      liveGroups = {};
 
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
@@ -727,6 +830,7 @@ function SyncNote() {
 
       var box = new QFrame();
       box.frameShape = QFrame.StyledPanel;
+      liveGroups[drawingName] = box; // for scrub-to-card panel scrolling
       var v = new QVBoxLayout(box);
 
       // Header: green clickable "Frame 009" link (padded to scene length
@@ -868,9 +972,33 @@ function SyncNote() {
     function makeJumpToSub(dn, shownFrame) {
       return function () {
         var f = firstFrameOfDrawing(layer.column, dn);
-        if (f > 0) frame.setCurrent(f);
+        if (f > 0) {
+          frame.setCurrent(f);
+          scrollTimelineToFrame(f); // bring the sub into the Timeline view
+        }
         if (f !== shownFrame) refresh(); // display was stale
       };
+    }
+
+    // Scroll the panel so a group card is visible (roughly centered).
+    function ensureGroupVisible(drawingName) {
+      var w = liveGroups[drawingName];
+      if (!w) return;
+      try { scroll.ensureWidgetVisible(w, 40, 120); return; } catch (e) {}
+      try { scroll.ensureWidgetVisible(w); return; } catch (e) {}
+      try {
+        // Manual fallback: center the card in the viewport by scrollbar math.
+        var y = 0;
+        try { y = (typeof w.pos.y === "function") ? w.pos.y() : w.pos.y; }
+        catch (e0) { y = Number(w.y) || 0; }
+        var vh = 0;
+        try { vh = scroll.viewport().height; } catch (e1) { vh = scroll.height; }
+        var sb = scroll.verticalScrollBar();
+        var target = Math.round(y - (vh - w.height) / 2);
+        if (target < 0) target = 0;
+        if (target > Number(sb.maximum)) target = Number(sb.maximum);
+        sb.value = target;
+      } catch (e) { /* leave the panel scroll as-is */ }
     }
 
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
@@ -928,13 +1056,18 @@ function SyncNote() {
       var f = frame.current();
       var groups = collectGroups(layer, model);
       var best = -1;
+      var bestDrawing = "";
       for (var i = 0; i < groups.length; i++) {
         var g = groups[i].frame;
         if (g <= 0) continue;
-        if (dir > 0 && g > f && (best < 0 || g < best)) best = g;
-        if (dir < 0 && g < f && (best < 0 || g > best)) best = g;
+        if (dir > 0 && g > f && (best < 0 || g < best)) { best = g; bestDrawing = groups[i].drawing; }
+        if (dir < 0 && g < f && (best < 0 || g > best)) { best = g; bestDrawing = groups[i].drawing; }
       }
-      if (best > 0) frame.setCurrent(best); // no next/prev note: do nothing
+      if (best > 0) { // no next/prev note: do nothing
+        frame.setCurrent(best);
+        scrollTimelineToFrame(best);     // Timeline follows the jump
+        ensureGroupVisible(bestDrawing); // ...and so does the panel
+      }
     }
     prevBtn.clicked.connect(function () { scrubToNoteFrame(-1); });
     nextBtn.clicked.connect(function () { scrubToNoteFrame(1); });
