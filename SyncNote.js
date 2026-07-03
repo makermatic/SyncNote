@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.14.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.14.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1066,23 +1066,6 @@ function SyncNote() {
       card.frameShape = QFrame.StyledPanel;
       var h = new QHBoxLayout(card);
 
-      // Frame.io-style check circle on the left. Toggling restyles in
-      // place — deliberately NO refresh(), so scroll/drafts/focus are
-      // untouched. Rebuilds re-read note.done from the model, so state
-      // always comes back correct.
-      var doneBtn = new QPushButton("");
-      doneBtn.minimumWidth = 22;
-      doneBtn.maximumWidth = 22;
-      doneBtn.minimumHeight = 22;
-      doneBtn.maximumHeight = 22;
-      styleDoneToggle(doneBtn, note.done === true);
-      doneBtn.clicked.connect(function () {
-        note.done = (note.done !== true); // missing field counts as unchecked
-        saveModel(model);
-        styleDoneToggle(doneBtn, note.done);
-      });
-      addW(h, doneBtn);
-
       var textColW = new QWidget();
       var textCol = new QVBoxLayout(textColW);
       textCol.setContentsMargins(0, 0, 0, 0);
@@ -1120,7 +1103,37 @@ function SyncNote() {
           refresh();
         };
       })(note.id, drawingName));
-      addW(h, delBtn);
+
+      // Frame.io-style check circle, small, right under the ✕. Toggling
+      // restyles in place — deliberately NO refresh(), so scroll/drafts/
+      // focus are untouched. Rebuilds re-read note.done from the model.
+      var doneBtn = new QPushButton("");
+      doneBtn.minimumWidth = 12;
+      doneBtn.maximumWidth = 12;
+      doneBtn.minimumHeight = 12;
+      doneBtn.maximumHeight = 12;
+      styleDoneToggle(doneBtn, note.done === true);
+      doneBtn.clicked.connect(function () {
+        note.done = (note.done !== true); // missing field counts as unchecked
+        saveModel(model);
+        styleDoneToggle(doneBtn, note.done);
+      });
+
+      // Right column: ✕ on top, circle centered beneath it, packed to top.
+      var doneRowW = new QWidget();
+      var doneRow = new QHBoxLayout(doneRowW);
+      doneRow.setContentsMargins(0, 4, 0, 0);
+      addW(doneRow, new QWidget(), 1);
+      addW(doneRow, doneBtn);
+      addW(doneRow, new QWidget(), 1);
+
+      var rightColW = new QWidget();
+      var rightCol = new QVBoxLayout(rightColW);
+      rightCol.setContentsMargins(0, 0, 0, 0);
+      addW(rightCol, delBtn);
+      addW(rightCol, doneRowW);
+      addW(rightCol, new QWidget(), 1); // pack ✕ + circle to the top
+      addW(h, rightColW);
 
       return card;
     }
@@ -1201,14 +1214,15 @@ function SyncNote() {
           btn.text = "✓";
           btn.toolTip = "Done — click to reopen";
           btn.styleSheet =
-            "QPushButton { border: 1px solid " + SN_GREEN + "; border-radius: 11px; " +
-            "background: transparent; color: " + SN_GREEN + "; font-weight: bold; }";
+            "QPushButton { border: 1px solid " + SN_GREEN + "; border-radius: 6px; " +
+            "background: transparent; color: " + SN_GREEN + "; font-weight: bold; " +
+            "font-size: 8px; padding: 0; }";
         } else {
           btn.text = "";
           btn.toolTip = "Mark as done";
           btn.styleSheet =
-            "QPushButton { border: 1px solid #808080; border-radius: 11px; " +
-            "background: transparent; }";
+            "QPushButton { border: 1px solid #808080; border-radius: 6px; " +
+            "background: transparent; padding: 0; }";
         }
       } catch (e) {
         // Styling refused by the engine: degrade to a plain text toggle.

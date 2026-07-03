@@ -622,6 +622,7 @@ Frame.io-style completion toggle on each note card: hollow gray circle = open, `
 - **Isolation**: toggling mutates the note, saves, and **restyles the button in place** (`styleDoneToggle`) — no `refresh()`, so scroll/drafts/highlight/focus are never touched. Rebuilds re-read `done` from the model. The metadata save may ping the notifier, but the signature check no-ops (no frames changed).
 - **Mechanism**: plain `QPushButton` + `clicked.connect` (the never-failed pattern), circle via stylesheet `border-radius`, unicode ✓; styling failure degrades to a text ○/✓ toggle.
 - Scope fences (not built, easy later): strikethrough/dim for done notes, hide-completed filter, done-counts on headers.
+- **v0.14.1 (user taste pass):** circle shrunk 22px → 12px (radius 6, ✓ at 8px, `padding:0` so the glyph fits) and moved from the card's left edge to a right-side column — ✕ on top, circle centered directly beneath it, packed to the top with a spacer.
 
 ### v0.12.2 — Add Note focuses the new group; thinner highlight
 - `refresh(focusDrawing)` optional param: when set (used by the Add Note button), the rebuild **skips the scroll-position restore** and instead scrolls to + flashes that group (`focusGroup()` — applied immediately and again at 60 ms, because the restore path's own delayed timer taught us post-rebuild scrolls get clamped before layout settles; the two mechanisms are mutually exclusive per refresh so they can't fight).
