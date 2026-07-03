@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.14.3";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.14.4";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1090,12 +1090,19 @@ function SyncNote() {
       // NOT bubble to the card's jump filter — selection stays safe.
       try { textLbl.textInteractionFlags = Qt.TextSelectableByMouse; }
       catch (e) { /* engine refused the flag; text stays non-selectable */ }
+      dimNoteText(textLbl, note.done === true); // done notes start dimmed
       addW(textCol, textLbl);
       addW(h, textColW, 1);
 
       var delBtn = new QPushButton("✕");
       delBtn.toolTip = "Delete note";
+      // Fixed geometry on BOTH right-column buttons: applying/removing a
+      // stylesheet after show recomputes a button's size hint (the v0.14.3
+      // click-resize bug) — locking min=max makes restyles size-neutral.
+      delBtn.minimumWidth = 28;
       delBtn.maximumWidth = 28;
+      delBtn.minimumHeight = 24;
+      delBtn.maximumHeight = 24;
       delBtn.clicked.connect((function (nid, dn) {
         return function () {
           deleteNote(model, layer.elementId, dn, nid);
@@ -1111,12 +1118,16 @@ function SyncNote() {
       // deliberately NO refresh(), so scroll/drafts/focus are untouched;
       // rebuilds re-read note.done from the model.
       var doneBtn = new QPushButton("");
-      doneBtn.maximumWidth = 28; // identical geometry to the ✕ above it
+      doneBtn.minimumWidth = 28; // identical fixed geometry to the ✕ above
+      doneBtn.maximumWidth = 28;
+      doneBtn.minimumHeight = 24;
+      doneBtn.maximumHeight = 24;
       styleDoneToggle(doneBtn, note.done === true);
       doneBtn.clicked.connect(function () {
         note.done = (note.done !== true); // missing field counts as unchecked
         saveModel(model);
         styleDoneToggle(doneBtn, note.done);
+        dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
       // Right column: ✕ on top, done toggle beneath it, packed to the top.
@@ -1219,6 +1230,12 @@ function SyncNote() {
         // Styling refused by the engine: degrade to a plain text toggle.
         try { btn.text = done ? "✓" : "○"; } catch (e2) {}
       }
+    }
+
+    // Done notes read grayed-out — signals "handled, no need to re-read".
+    // Restyled in place alongside the toggle; rebuilds re-apply from model.
+    function dimNoteText(lbl, done) {
+      try { lbl.styleSheet = done ? "color: #808080;" : ""; } catch (e) {}
     }
 
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
