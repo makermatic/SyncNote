@@ -616,6 +616,13 @@ User-reported oversight: every launch created a sub at the playhead (a literal r
 2. **Noteless, unexposed drawings are hidden** from the list (`collectGroups` skips them, and skips empty note arrays left behind by deletions) — they carry no information.
 3. **Removable empty groups** — groups with zero notes get a ✕ that calls `removeSubstitution()`: walk frames 1..N tracking the last non-target drawing (`prev`); every frame showing the target is re-keyed to `prev` ("" clears when nothing came before), so earlier exposure extends across the gap as if the sub never existed. `prev` deliberately not updated inside the span — that also flattens redundant mid-span keys. One undo step. Note-bearing subs are not removable (delete notes first). The drawing file stays in the element, hidden by rule 2.
 
+### v0.14.0 — per-note check circles (student feedback)
+Frame.io-style completion toggle on each note card: hollow gray circle = open, `SN_GREEN` circle + ✓ = done. Design decisions that keep it risk-free:
+- **Data**: optional `done: bool` per note; missing (all pre-0.14 notes) reads as unchecked — no migration, no version bump.
+- **Isolation**: toggling mutates the note, saves, and **restyles the button in place** (`styleDoneToggle`) — no `refresh()`, so scroll/drafts/highlight/focus are never touched. Rebuilds re-read `done` from the model. The metadata save may ping the notifier, but the signature check no-ops (no frames changed).
+- **Mechanism**: plain `QPushButton` + `clicked.connect` (the never-failed pattern), circle via stylesheet `border-radius`, unicode ✓; styling failure degrades to a text ○/✓ toggle.
+- Scope fences (not built, easy later): strikethrough/dim for done notes, hide-completed filter, done-counts on headers.
+
 ### v0.12.2 — Add Note focuses the new group; thinner highlight
 - `refresh(focusDrawing)` optional param: when set (used by the Add Note button), the rebuild **skips the scroll-position restore** and instead scrolls to + flashes that group (`focusGroup()` — applied immediately and again at 60 ms, because the restore path's own delayed timer taught us post-rebuild scrolls get clamped before layout settles; the two mechanisms are mutually exclusive per refresh so they can't fight).
 - Highlight border 2px → 1px (user taste).
