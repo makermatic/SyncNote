@@ -37,7 +37,8 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.22.2";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.23.0";          // shown in title + status bar so we always know which build runs
+  var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -75,6 +76,11 @@ function SyncNote() {
 
     model.syncNoteElementId = layer.elementId;
     saveModel(model);
+
+    // Silent launch sweep (v0.23.0): abandoned Add Note subs (no notes, no
+    // art) disappear before the panel builds. Runs before the first-use
+    // check so a fully swept scene behaves like first use again.
+    sweepAbandonedSubs(layer, model);
 
     // First use ONLY (layer has no subs yet): create a starter substitution
     // at the playhead so a new user has something to type into. On every
@@ -680,27 +686,86 @@ function SyncNote() {
   // gap), or cleared when nothing came before. One undo step. The drawing
   // file stays in the element (harmless; hidden by collectGroups once it
   // has no exposure and no notes).
+  // Core exposure removal WITHOUT undo bracketing, so callers can batch
+  // several removals into a single undo step (the launch sweep does).
+  function removeSubstitutionCore(layer, drawingName) {
+    var n = frame.numberOf();
+    var prev = ""; // drawing exposed just before the current span
+    for (var f = 1; f <= n; f++) {
+      var cur = column.getEntry(layer.column, 1, f);
+      if (cur === drawingName) {
+        column.setEntry(layer.column, 1, f, prev); // "" clears the cell
+        // prev intentionally NOT updated: keep extending the pre-span
+        // drawing over the whole span (and over any redundant keys).
+      } else {
+        prev = cur;
+      }
+    }
+  }
+
   function removeSubstitution(layer, drawingName) {
     scene.beginUndoRedoAccum("SyncNote: remove substitution");
     try {
-      var n = frame.numberOf();
-      var prev = ""; // drawing exposed just before the current span
-      for (var f = 1; f <= n; f++) {
-        var cur = column.getEntry(layer.column, 1, f);
-        if (cur === drawingName) {
-          column.setEntry(layer.column, 1, f, prev); // "" clears the cell
-          // prev intentionally NOT updated: keep extending the pre-span
-          // drawing over the whole span (and over any redundant keys).
-        } else {
-          prev = cur;
-        }
-      }
+      removeSubstitutionCore(layer, drawingName);
       scene.endUndoRedoAccum();
       return true;
     } catch (e) {
       scene.endUndoRedoAccum();
       return false;
     }
+  }
+
+  // Size of a drawing's file on disk, or -1 when unreadable. There is NO
+  // is-drawing-empty API (checked, KB §28), so blank-vs-drawn is judged by
+  // file size: Drawing.create blanks are a few hundred bytes, brushwork
+  // adds kilobytes. NOTE: reflects the SAVED state — art drawn without the
+  // scene ever saving is invisible here (save-on-close makes this rare).
+  function drawingArtBytes(elementId, drawingName) {
+    var path = "";
+    try { path = String(Drawing.filename(elementId, drawingName)); } catch (e) { return -1; }
+    if (!path) return 0; // no file at all: nothing drawn, nothing to lose
+    try { return Number(new QFileInfo(path).size()); } catch (e0) {}
+    try { return Number(new File(path).size); } catch (e1) {}
+    return -1; // can't read: caller must treat as "has art" and keep it
+  }
+
+  // Launch sweep (v0.23.0, silent by user choice): subs with zero notes
+  // AND zero artwork are accidents of the Add Note button — remove their
+  // exposure. AND, never OR: notes-without-art and art-without-notes are
+  // both legitimate review content. One undo step for the whole sweep;
+  // drawing files are never deleted, so a false positive can't cost art.
+  function sweepAbandonedSubs(layer, model) {
+    var timings = [];
+    try { timings = column.getDrawingTimings(layer.column) || []; } catch (e) { return; }
+    var doomed = [];
+    for (var i = 0; i < timings.length; i++) {
+      var name = String(timings[i]);
+      if (notesFor(model, layer.elementId, name).length > 0) continue; // has notes
+      var bytes = drawingArtBytes(layer.elementId, name);
+      if (bytes < 0 || bytes > SN_EMPTY_TVG_BYTES) {
+        trace("sweep: sub " + name + " kept (" +
+              (bytes < 0 ? "size unreadable" : bytes + " bytes of art") + ")");
+        continue;
+      }
+      trace("sweep: sub " + name + " is empty (" + bytes + " bytes, no notes)");
+      doomed.push(name);
+    }
+    if (doomed.length === 0) return;
+
+    scene.beginUndoRedoAccum("SyncNote: sweep empty subs");
+    try {
+      for (var d = 0; d < doomed.length; d++) {
+        removeSubstitutionCore(layer, doomed[d]);
+        try {
+          var eid = String(layer.elementId);
+          if (model.notesByDrawing[eid]) delete model.notesByDrawing[eid][doomed[d]];
+        } catch (e0) { /* empty-array key tidy-up only */ }
+      }
+      scene.endUndoRedoAccum();
+    } catch (e1) {
+      scene.endUndoRedoAccum();
+    }
+    trace("sweep: removed " + doomed.length + " abandoned sub(s): " + doomed.join(", "));
   }
 
   // Erase the drawn content of EVERY sub in the Notes element — all four

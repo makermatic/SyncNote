@@ -713,6 +713,16 @@ The v0.21.1 rework also failed live testing: clicking ✎ flipped the state (too
 - The scroll-away also reproduced with `scrollGroupToTop` + retries, suggesting the anchor problem is not fully understood either (v0.20.3's fix works for Add Note but something differs on the ✎ path).
 - Both v0.21.x designs (in-card editor; add-box-as-editor) are in git history: `a609802`, `b650c13`.
 
+## 28. Implementation log — v0.23.0 (silent launch sweep of abandoned subs)
+
+User repro: Add Note pressed by accident → empty group persists forever across launches. Fix: `sweepAbandonedSubs()` runs silently at every launch (user chose silent over confirm), before the first-use starter check.
+
+- **Rule is AND, never OR** (user originally said "no art OR no notes" — that would delete notes-without-scribbles and scribbles-without-text, both legitimate): swept only with **zero notes AND zero artwork**.
+- **No is-drawing-empty API exists** (Drawing class checked). Art detection = file size via `Drawing.filename(elementId, drawingName)` (docs-verified) + `QFileInfo(path).size()` (fallback: Harmony `File.size`; unreadable → keep). Threshold `SN_EMPTY_TVG_BYTES = 1024` — blanks from `Drawing.create` are a few hundred bytes, brushwork adds KB. **Every decision traced with byte counts** so the first real-world log calibrates the threshold if needed.
+- Removal = exposure only (via `removeSubstitutionCore`, the accum-free refactor of `removeSubstitution`), whole sweep one undo step, drawing files never deleted → a false positive costs one Ctrl+Z, never artwork.
+- Accepted edge (user informed): file size reflects the SAVED state — art drawn in a session where the scene never saved reads as empty at next launch and gets its exposure swept (file + art survive; re-expose to recover). Save-on-close makes this rare.
+- A fully swept scene has zero subs → next launch runs the v0.13.0 first-use starter again, by design.
+
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
