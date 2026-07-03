@@ -654,7 +654,8 @@ Implementation (`dlg.rejected` handler):
 
 ### v0.17.0 — thin cards + new notes land at the top
 1. **One-line note cards were ~55px tall** — the v0.14.1 vertical ✕-over-toggle stack set the card's minimum height to two buttons regardless of text. Cards can't be thin *and* keep the vertical stack, so (user-approved trade-off) the ✕ and toggle now sit **side by side in the top-right corner** (24px block), with a spacer pinning them top on tall cards.
-2. **Add Note now scrolls the new group to the TOP of the viewport** (`scrollGroupToTop`: card `pos.y` − 6px margin into the scrollbar, clamped) instead of merely "visible" — its header + input land right under the toolbar, per user mock. `focusGroup` keeps the double-apply (immediate + 60 ms) for post-rebuild layout settling; the ◀/▶ scrub still uses centered `ensureWidgetVisible` (different intent: orienting within a list vs. presenting a fresh input).
+2. **Add Note now scrolls the new group to the TOP of the viewport** (`scrollGroupToTop`: card `pos.y` − 6px margin into the scrollbar, clamped) instead of merely "visible" — its header + input land right under the toolbar, per user mock. `focusGroup` keeps the double-apply (immediate + 60 ms) for post-rebuild layout settling.
+3. **v0.17.1:** ◀/▶ scrub switched to the same pin-to-top behavior (user: consistency over the centered variant); `ensureGroupVisible` removed as dead code — `scrollGroupToTop` is now the single panel-scroll primitive.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:

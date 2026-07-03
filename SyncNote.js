@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.17.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.17.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1206,27 +1206,6 @@ function SyncNote() {
       };
     }
 
-    // Scroll the panel so a group card is visible (roughly centered).
-    function ensureGroupVisible(drawingName) {
-      var w = liveGroups[drawingName];
-      if (!w) return;
-      try { scroll.ensureWidgetVisible(w, 40, 120); return; } catch (e) {}
-      try { scroll.ensureWidgetVisible(w); return; } catch (e) {}
-      try {
-        // Manual fallback: center the card in the viewport by scrollbar math.
-        var y = 0;
-        try { y = (typeof w.pos.y === "function") ? w.pos.y() : w.pos.y; }
-        catch (e0) { y = Number(w.y) || 0; }
-        var vh = 0;
-        try { vh = scroll.viewport().height; } catch (e1) { vh = scroll.height; }
-        var sb = scroll.verticalScrollBar();
-        var target = Math.round(y - (vh - w.height) / 2);
-        if (target < 0) target = 0;
-        if (target > Number(sb.maximum)) target = Number(sb.maximum);
-        sb.value = target;
-      } catch (e) { /* leave the panel scroll as-is */ }
-    }
-
     // Flash a white border on the card the arrow keys landed on, so it's
     // obvious where navigation went; fades automatically. Deliberately
     // styling-only (no event filters — see the v0.8.x card-click saga);
@@ -1351,8 +1330,8 @@ function SyncNote() {
       if (best > 0) { // no next/prev note: do nothing
         frame.setCurrent(best);
         scrollTimelineToFrame(best);     // Timeline follows the jump
-        ensureGroupVisible(bestDrawing); // ...and so does the panel
-        highlightGroup(bestDrawing);     // ...and shows where it landed
+        scrollGroupToTop(bestDrawing);   // panel: card pinned under toolbar
+        highlightGroup(bestDrawing);     // ...and flashed so you see it land
         updateScrubButtons();            // instant gray-out at the ends
       }
     }
