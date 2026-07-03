@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.14.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.14.2";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1108,10 +1108,12 @@ function SyncNote() {
       // restyles in place — deliberately NO refresh(), so scroll/drafts/
       // focus are untouched. Rebuilds re-read note.done from the model.
       var doneBtn = new QPushButton("");
-      doneBtn.minimumWidth = 12;
-      doneBtn.maximumWidth = 12;
-      doneBtn.minimumHeight = 12;
-      doneBtn.maximumHeight = 12;
+      doneBtn.minimumWidth = 24;
+      doneBtn.maximumWidth = 24;
+      doneBtn.minimumHeight = 24;
+      doneBtn.maximumHeight = 24;
+      try { doneBtn.cursor = new QCursor(Qt.PointingHandCursor); }
+      catch (e) { /* cosmetic only */ }
       styleDoneToggle(doneBtn, note.done === true);
       doneBtn.clicked.connect(function () {
         note.done = (note.done !== true); // missing field counts as unchecked
@@ -1206,23 +1208,33 @@ function SyncNote() {
       hlGroup = null;
     }
 
-    // Completion circle styling: hollow gray = open, green ✓ = done.
-    // Same green as the Frame/Sub links (SN_GREEN).
+    // Completion circle styling (Frame.io-style, filled variant):
+    //   open   = hollow gray circle; hover brightens/thickens the ring;
+    //            press previews a faint green fill
+    //   done   = solid SN_GREEN circle with a white ✓; hover = brighter
+    //            green (Material 400), press = darker (Material 700)
+    // All interactivity via stylesheet :hover/:pressed pseudo-states — the
+    // style engine tracks the mouse, no script runs, no event filters.
     function styleDoneToggle(btn, done) {
       try {
         if (done) {
           btn.text = "✓";
           btn.toolTip = "Done — click to reopen";
           btn.styleSheet =
-            "QPushButton { border: 1px solid " + SN_GREEN + "; border-radius: 6px; " +
-            "background: transparent; color: " + SN_GREEN + "; font-weight: bold; " +
-            "font-size: 8px; padding: 0; }";
+            "QPushButton { border: 1px solid " + SN_GREEN + "; border-radius: 12px; " +
+            "background: " + SN_GREEN + "; color: #ffffff; font-weight: bold; " +
+            "font-size: 12px; padding: 0; } " +
+            "QPushButton:hover { background: #66BB6A; border-color: #66BB6A; } " +
+            "QPushButton:pressed { background: #388E3C; border-color: #388E3C; }";
         } else {
           btn.text = "";
           btn.toolTip = "Mark as done";
           btn.styleSheet =
-            "QPushButton { border: 1px solid #808080; border-radius: 6px; " +
-            "background: transparent; padding: 0; }";
+            "QPushButton { border: 1px solid #999999; border-radius: 12px; " +
+            "background: transparent; padding: 0; } " +
+            "QPushButton:hover { border: 2px solid #cccccc; } " +
+            "QPushButton:pressed { border: 2px solid " + SN_GREEN + "; " +
+            "background: rgba(76, 175, 80, 80); }";
         }
       } catch (e) {
         // Styling refused by the engine: degrade to a plain text toggle.
