@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.20.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.20.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -903,10 +903,10 @@ function SyncNote() {
     addW(bottom, statusLbl, 1);
     var copyBtn = new QPushButton("Copy All");
     copyBtn.toolTip = "Copy every note as plain text — paste into any app";
-    // Pinned width for both label states ("Copy All" / "Copied ✓") —
-    // post-show text changes must never resize the button (v0.14.4 lesson).
-    copyBtn.minimumWidth = 95;
-    copyBtn.maximumWidth = 95;
+    // Static label, no width pin (v0.20.1): on this engine pins only take
+    // effect on the NEXT relayout, and the feedback text change was the
+    // relayout trigger — natural size at launch, snap-to-pin on click =
+    // the "shrink". No text change + no pin = nothing ever moves.
     var clearBtn = new QPushButton("Clear all");
     clearBtn.toolTip = "Clear notes, sub art, or everything (asks first)";
     addW(bottom, copyBtn);
@@ -1536,22 +1536,11 @@ function SyncNote() {
       d.exec();
     }
 
-    // Revert timer created EAGERLY at build, not lazily on first click —
-    // live testing showed the lazy version missing its first firing
-    // (first click never reverted; second click worked). Initialization
-    // now happens once, here; clicks only restart the countdown.
-    var copyRevertTimer = null;
-    try {
-      try { copyRevertTimer = new QTimer(dlg); }
-      catch (e0) { copyRevertTimer = new QTimer(); }
-      copyRevertTimer.singleShot = true;
-      copyRevertTimer.timeout.connect(function () {
-        try { copyBtn.text = "Copy All"; } catch (e) {}
-        trace("copy feedback reverted"); // proves the timer fired
-      });
-      g_snKeepAlivePanel.push(copyRevertTimer);
-    } catch (e1) { copyRevertTimer = null; }
-
+    // No button-text feedback (v0.20.1, user decision): every variant of
+    // swapping the label caused size glitches on this engine. The button
+    // is fully static; success is confirmed by the Message Log trace (and
+    // by the paste working). The fallback dialog still covers clipboard
+    // failure visibly.
     copyBtn.clicked.connect(function () {
       var digest = buildDigest();
       var ok = false;
@@ -1563,10 +1552,6 @@ function SyncNote() {
       }
       if (!ok) { showDigestFallback(digest); return; }
       trace("notes digest copied to clipboard (" + digest.length + " chars)");
-      copyBtn.text = "Copied ✓";
-      try {
-        if (copyRevertTimer) { copyRevertTimer.stop(); copyRevertTimer.start(2500); }
-      } catch (e2) { /* feedback text just stays until next click */ }
     });
 
     // ---- Clear all (v0.19.0): confirmation with a keyboard default ----
