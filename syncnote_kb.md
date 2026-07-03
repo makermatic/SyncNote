@@ -691,6 +691,18 @@ The shrink persisted even with pinned width. Best explanation of all the evidenc
 ### v0.20.3 — scroll-to-new-note works from any scroll position
 User repro: Add Note only snapped the new group to the top if the scrollbar already sat at the top. Cause: post-rebuild, card `pos.y` is unmeasured garbage until the layout computes geometry — "garbage ≈ 0 ≈ top" was only accidentally correct from the top. Fixes: `scrollGroupToTop` calls `listLayout.activate()` (forces geometry) before reading positions, and `focusGroup` retries at 60 ms **and** 250 ms for busy-Harmony insurance. Pattern-book: **never read widget geometry in the same breath as a rebuild — activate the layout first, and re-apply on a timer.**
 
+## 27. Implementation log — v0.21.0 (edit notes ✎)
+
+Inline editing via **state-driven rebuild** — no in-place widget surgery (the historical source of every geometry bug):
+- `editingNoteId` flag + `refresh()`: the flagged note's card renders its text as a **prefilled QTextEdit + Save button** instead of a label, reusing the add-box machinery wholesale (Enter=save via `makeEnterFilter`, Shift+Enter=newline, trailing-`\n` fallback, `sizeNoteInput` auto-grow).
+- `editDraft`/`liveEditInput` extend the draft-stash: an auto-refresh mid-edit preserves the in-progress rewrite.
+- Save mutates only `note.text` (id/date/done untouched; user declined an "(edited)" marker — notes only sync when scenes are handed back anyway). **Empty text on save = cancel** — deletion stays the ✕'s job.
+- Button stack is now **✕ / ✎ / ○** (28×20 each; taller card accepted by user). The ✎ toggles: edit ↔ cancel. **Esc is deliberately NOT cancel** — Esc closes the whole QDialog panel; wiring it safely would need key-filter surgery that isn't worth the risk.
+- Glyph choice: text pencil **✎** over emoji ✏️ (plain glyphs have been flawless in these buttons; color emoji in Qt button text is per-system roulette).
+- Deleting a note that's being edited clears the edit state first.
+
+Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
+
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.
