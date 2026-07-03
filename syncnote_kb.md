@@ -627,6 +627,17 @@ Frame.io-style completion toggle on each note card: hollow gray circle = open, `
 - **v0.14.4 (click-resize bug + dim-when-done):** clicking the toggle changed its size once, then stable — because applying/removing a stylesheet on a SHOWN button switches its render mode and recomputes the size hint (at build everything settles together; a click-time restyle re-lays-out just that button). Fix: **pin min=max width/height (28×24) on BOTH right-column buttons** so restyles are size-neutral by construction. New per student-UX: `dimNoteText()` grays the note text (#808080) while done — applied at build from the model and toggled in place with the circle, same no-refresh pattern.
 - **v0.14.3 (fallback taken — native square):** the pseudo-states worked and felt great, but the custom-styled circle could never align with the natively-themed ✕ (different shape metrics, different hover border). Root lesson: **a custom-styled widget can't be made visually consistent with native-themed neighbors — match by NOT styling.** The toggle is now an unstyled native button, geometry-identical to the ✕ (same `maximumWidth`, no fixed size, no centering wrapper); state = glyph (○ open / bold `SN_GREEN` ✓ done). The only stylesheet left is the checked text color — flagged as the removal point if a color-only stylesheet suppresses native hover on some engine. Pointing-hand cursor dropped (✕ doesn't have one — consistency wins).
 
+---
+
+## 24. Implementation log — v0.15.0 (group scenes broke the connection logic)
+
+First run in a **rigged scene** (`LL_Llama_Rig`, character inside a GROUP node) exposed two flaws — status bar read "renders BEHIND 45 layer(s)" and the cable was parked at the back on every run:
+
+1. **Render rank was blind to groups.** `buildDefaultCompositionOrder()` enumerates nodes *inside* groups (by traversal, not composite port order), so the ~45 rig READs always counted as "ahead" of Notes → verification could never pass in group scenes, regardless of port order. Fixed: only **depth-0** items compete — top-level READ layers and GROUPs (a group ahead = its whole contents draw ahead = it counts as one layer). Uses `CompositionItem.depth` (docs: 0 = top-level); guarded.
+2. **The failure exit parked Notes at the BACK.** Since v0.9.1 the strategy loop tries Notes-last (the proven front) *first* — so when both strategies failed verification, the final state was the last experiment: Notes-first = back port. Failing scenes were actively made worse on every run. Fixed: on total failure, re-apply Notes-last (the empirically-front order) before reporting honestly ("left on last port (usually front) — render check disagrees; diagnostics in Message Log").
+
+Lesson for the pattern book: **a try-verify-retry loop must end on the best-known state, not on the last experiment.**
+
 ### v0.12.2 — Add Note focuses the new group; thinner highlight
 - `refresh(focusDrawing)` optional param: when set (used by the Add Note button), the rebuild **skips the scroll-position restore** and instead scrolls to + flashes that group (`focusGroup()` — applied immediately and again at 60 ms, because the restore path's own delayed timer taught us post-rebuild scrolls get clamped before layout settles; the two mechanisms are mutually exclusive per refresh so they can't fight).
 - Highlight border 2px → 1px (user taste).

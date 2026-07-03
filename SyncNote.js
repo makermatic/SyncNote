@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.14.4";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.15.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -314,18 +314,28 @@ function SyncNote() {
       if (rank === 0) return "frontmost layer ✓ (" + strategies[s].label + ")";
     }
 
-    // 4) Neither order made it frontmost — the reordered composite is
-    // probably not the one that decides stacking in this scene. Dump full
-    // diagnostics and say so; do not pretend.
+    // 4) Neither order satisfied the measurement. CRITICAL: do not leave
+    // the LOSING order in place (v0.9.1..v0.14.x did — the last strategy
+    // tried was Notes-first, i.e. the BACK port, so failing scenes got
+    // actively parked at the back). Re-apply the empirically-front order
+    // (Notes on last port), then report honestly.
+    reorderComposite(readPath, comp, false);
     logCompositionOrder();
     logPortMap();
-    return "renders BEHIND " + rank + " layer(s) — diagnostics in Message Log";
+    rank = renderRank(readPath);
+    return "left on last port (usually front) — render check disagrees " +
+           "(rank " + rank + "); diagnostics in Message Log";
   }
 
-  // Notes' place in the real render stack: 0 = frontmost drawing layer,
-  // N = that many drawing layers render in front of it, -2 = unmeasurable.
-  // Only READ nodes are counted as "layers" — effects/pegs/composites in the
-  // stack don't compete with Notes for visibility.
+  // Notes' place in the real render stack: 0 = frontmost layer,
+  // N = that many layers render in front of it, -2 = unmeasurable.
+  //
+  // Group-scene gotcha (found in a rigged scene): the composition also
+  // enumerates nodes INSIDE groups, ordered by group traversal — ~45 rig
+  // drawings "ahead" of Notes no matter the port order, so verification
+  // could never pass. Fix: only TOP-LEVEL items compete (depth 0 per
+  // CompositionItem.depth) — READ layers and GROUPs (a group ahead of
+  // Notes means its whole rig draws in front, so it counts as one layer).
   function renderRank(readPath) {
     try {
       var order = compositionOrder.buildDefaultCompositionOrder();
@@ -335,7 +345,13 @@ function SyncNote() {
         var n = "";
         try { n = String(order[i].node); } catch (e0) { continue; }
         if (n === readPath) return ahead;
-        try { if (node.type(n) === "READ") ahead++; } catch (e1) {}
+        var depth = 0;
+        try { depth = Number(order[i].depth) || 0; } catch (e1) {}
+        if (depth > 0) continue; // inside a group: not a top-level layer
+        try {
+          var t = node.type(n);
+          if (t === "READ" || t === "GROUP") ahead++;
+        } catch (e2) { /* unreadable node; don't count it */ }
       }
       return -2; // Notes absent from the composition — not rendering at all
     } catch (e) {
