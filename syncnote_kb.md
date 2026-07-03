@@ -675,6 +675,11 @@ v0.19.0 test results: clipboard copy **works** (pastes into Slack etc.), Sub Art
 3. **Clear Both upgraded to full reset per user:** notes + art + **all exposure removed** (`clearAllExposure`: every frame `setEntry("")`) and the panel **closes itself** afterward (routing through save-on-close, so the reset lands on disk — and no refresh needed). Notes Only / Sub Art Only still keep subs and refresh in place; confirm-dialog copy updated to say so.
 4. **Stats + action buttons share one bottom row** (stats left with stretch, buttons right), per user draw-over.
 
+### v0.20.0 — compactness restored; vertical ✕/✓ compromise; eager copy timer
+1. **v0.19.1 regression, window widened:** merging stats+buttons into one row made that row's minimum width (label hint + 175px button + Clear) exceed the 380px dialog minimum, forcing the window wider and cramming the row. Fix: `statusLbl.minimumWidth = 1` (explicit minimum lets the label compress and wrap left instead of stretching the row), `setSpacing(8)`, and the Copy pin shrunk 175→95 with shorter feedback text ("Copied ✓"). Lesson: **a pinned-wide child inside a stretch row can silently redefine the whole window's minimum.**
+2. **✕/✓ back to vertical at 28×20** (option (b) of three offered; user wants to judge if the size is worth it). History for the record: vertical was v0.14.1 (user), horizontal was v0.17.0 (user, to fix ~55px one-line cards). At 20px tall the stack costs ~44px. If it still feels thick, the fallback is (c) horizontal (v0.17.0 layout, in git history).
+3. **Copy revert timer created eagerly at build** — live testing showed the lazy-on-first-click construction missing its first firing (first click never reverted, second worked). Clicks now only `stop()`/`start()` a pre-built, pre-connected, pinned timer. Lesson candidate for §7.3.5 if it recurs elsewhere: **create+connect QTimers during construction, not inside event handlers.**
+
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.

@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.19.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.20.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -890,18 +890,23 @@ function SyncNote() {
     var bottomW = new QWidget();
     var bottom = new QHBoxLayout(bottomW);
     bottom.setContentsMargins(0, 0, 0, 0);
+    bottom.setSpacing(8); // breathing room between stats and buttons
     var statusLbl = new QLabel(
       "Layer: " + layer.node + "   •   element #" + layer.elementId +
       "   •   " + notesPortInfo(layer.node) + "   •   v" + SN_VERSION);
     statusLbl.styleSheet = "color: gray; font-size: 10px;";
     statusLbl.wordWrap = true;
+    // Compressible: without an explicit minimum, this label's size hint
+    // forced the whole WINDOW wider (v0.19.1 regression). Now it wraps to
+    // a second line on the left instead of stretching the row.
+    statusLbl.minimumWidth = 1;
     addW(bottom, statusLbl, 1);
     var copyBtn = new QPushButton("Copy All");
     copyBtn.toolTip = "Copy every note as plain text — paste into any app";
-    // Pinned width: the label swaps to "Copied to clipboard ✓" and a
-    // post-show text change must never resize the button (v0.14.4 lesson).
-    copyBtn.minimumWidth = 175;
-    copyBtn.maximumWidth = 175;
+    // Pinned width for both label states ("Copy All" / "Copied ✓") —
+    // post-show text changes must never resize the button (v0.14.4 lesson).
+    copyBtn.minimumWidth = 95;
+    copyBtn.maximumWidth = 95;
     var clearBtn = new QPushButton("Clear all");
     clearBtn.toolTip = "Clear notes, sub art, or everything (asks first)";
     addW(bottom, copyBtn);
@@ -1214,8 +1219,8 @@ function SyncNote() {
       // click-resize bug) — locking min=max makes restyles size-neutral.
       delBtn.minimumWidth = 28;
       delBtn.maximumWidth = 28;
-      delBtn.minimumHeight = 24;
-      delBtn.maximumHeight = 24;
+      delBtn.minimumHeight = 20; // shorter (v0.20.0): vertical stack costs
+      delBtn.maximumHeight = 20; // ~44px instead of the old ~55px
       delBtn.clicked.connect((function (nid, dn) {
         return function () {
           deleteNote(model, layer.elementId, dn, nid);
@@ -1233,8 +1238,8 @@ function SyncNote() {
       var doneBtn = new QPushButton("");
       doneBtn.minimumWidth = 28; // identical fixed geometry to the ✕ above
       doneBtn.maximumWidth = 28;
-      doneBtn.minimumHeight = 24;
-      doneBtn.maximumHeight = 24;
+      doneBtn.minimumHeight = 20;
+      doneBtn.maximumHeight = 20;
       styleDoneToggle(doneBtn, note.done === true);
       doneBtn.clicked.connect(function () {
         note.done = (note.done !== true); // missing field counts as unchecked
@@ -1243,20 +1248,15 @@ function SyncNote() {
         dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
-      // ✕ and toggle sit SIDE BY SIDE in the top-right corner: stacking
-      // them vertically forced every card to ~two button heights, bloating
-      // one-line notes (v0.17.0 user feedback). The spacer below pins the
-      // pair to the top when the note text wraps tall.
-      var btnRowW = new QWidget();
-      var btnRow = new QHBoxLayout(btnRowW);
-      btnRow.setContentsMargins(0, 0, 0, 0);
-      addW(btnRow, delBtn);
-      addW(btnRow, doneBtn);
-
+      // ✕ over ✓, vertical again (v0.20.0 user choice) — but with SHORTER
+      // buttons (28×20) so the stack costs ~44px instead of the ~55px that
+      // bloated one-line cards back in v0.17.0. Spacer pins the pair top.
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
-      addW(rightCol, btnRowW);
+      rightCol.setSpacing(4);
+      addW(rightCol, delBtn);
+      addW(rightCol, doneBtn);
       addW(rightCol, new QWidget(), 1);
       addW(h, rightColW);
 
@@ -1536,7 +1536,22 @@ function SyncNote() {
       d.exec();
     }
 
+    // Revert timer created EAGERLY at build, not lazily on first click —
+    // live testing showed the lazy version missing its first firing
+    // (first click never reverted; second click worked). Initialization
+    // now happens once, here; clicks only restart the countdown.
     var copyRevertTimer = null;
+    try {
+      try { copyRevertTimer = new QTimer(dlg); }
+      catch (e0) { copyRevertTimer = new QTimer(); }
+      copyRevertTimer.singleShot = true;
+      copyRevertTimer.timeout.connect(function () {
+        try { copyBtn.text = "Copy All"; } catch (e) {}
+        trace("copy feedback reverted"); // proves the timer fired
+      });
+      g_snKeepAlivePanel.push(copyRevertTimer);
+    } catch (e1) { copyRevertTimer = null; }
+
     copyBtn.clicked.connect(function () {
       var digest = buildDigest();
       var ok = false;
@@ -1548,21 +1563,10 @@ function SyncNote() {
       }
       if (!ok) { showDigestFallback(digest); return; }
       trace("notes digest copied to clipboard (" + digest.length + " chars)");
-      copyBtn.text = "Copied to clipboard ✓";
+      copyBtn.text = "Copied ✓";
       try {
-        if (!copyRevertTimer) {
-          try { copyRevertTimer = new QTimer(dlg); }
-          catch (e0) { copyRevertTimer = new QTimer(); }
-          copyRevertTimer.singleShot = true;
-          copyRevertTimer.timeout.connect(function () {
-            try { copyBtn.text = "Copy All"; } catch (e) {}
-            trace("copy feedback reverted"); // proves the timer fired
-          });
-          g_snKeepAlivePanel.push(copyRevertTimer);
-        }
-        copyRevertTimer.stop();
-        copyRevertTimer.start(2500);
-      } catch (e1) { /* feedback text just stays until next click */ }
+        if (copyRevertTimer) { copyRevertTimer.stop(); copyRevertTimer.start(2500); }
+      } catch (e2) { /* feedback text just stays until next click */ }
     });
 
     // ---- Clear all (v0.19.0): confirmation with a keyboard default ----
