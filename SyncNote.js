@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.18.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.19.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -70,6 +70,7 @@ function SyncNote() {
       return;
     }
     var connectStatus = connectNotesNode(layer.node); // wire + verify by RENDER ORDER
+    trace("connection: " + connectStatus); // verdict lives in the Message Log
     applyNotesColor(layer.node); // paint it SyncNote green, every run
 
     model.syncNoteElementId = layer.elementId;
@@ -89,7 +90,7 @@ function SyncNote() {
 
     revealLayer(layer.node); // select it so it's obvious in Timeline/Node View
 
-    buildDialog(model, layer, connectStatus);
+    buildDialog(model, layer);
   }
 
   // =======================================================================
@@ -702,6 +703,41 @@ function SyncNote() {
     }
   }
 
+  // Erase the drawn content of EVERY sub in the Notes element — all four
+  // art layers (0 underlay, 1 colour, 2 line, 3 overlay) per drawing via
+  // DrawingTools.clearArt. Scoped to our element ID by construction, so
+  // student artwork is untouchable. Config format is verified in docs but
+  // new in practice: tries a Drawing.Key first, then a plain object, and
+  // traces the tally so a refusing engine is visible in the Message Log.
+  function clearAllSubArt(layer) {
+    var timings = [];
+    try { timings = column.getDrawingTimings(layer.column) || []; } catch (e) {}
+    var cleared = 0;
+    var failed = 0;
+    for (var i = 0; i < timings.length; i++) {
+      var name = String(timings[i]);
+      for (var art = 0; art <= 3; art++) {
+        var ok = false;
+        try {
+          var key = null;
+          try { key = Drawing.Key({ elementId: layer.elementId, exposure: name }); }
+          catch (e0) { key = { elementId: layer.elementId, exposure: name }; }
+          ok = DrawingTools.clearArt({ drawing: key, art: art });
+        } catch (e1) {
+          try {
+            ok = DrawingTools.clearArt({
+              drawing: { elementId: layer.elementId, exposure: name },
+              art: art
+            });
+          } catch (e2) { ok = false; }
+        }
+        if (ok) cleared++; else failed++;
+      }
+    }
+    trace("clearAllSubArt: " + cleared + " art layer(s) cleared" +
+          (failed ? ", " + failed + " FAILED (see KB §26 if this persists)" : ""));
+  }
+
   // Every drawing in the element, plus any drawing that has notes,
   // each with its first exposed frame (-1 if not currently exposed).
   function collectGroups(layer, model) {
@@ -798,7 +834,7 @@ function SyncNote() {
     } catch (e) { /* non-fatal */ }
   }
 
-  function buildDialog(model, layer, connectStatus) {
+  function buildDialog(model, layer) {
     // Parenting to Harmony's main window keeps Qt (not the script engine's
     // garbage collector) in charge of the dialog's lifetime.
     var dlg = new QDialog(mainWindow());
@@ -836,12 +872,24 @@ function SyncNote() {
     scroll.setWidget(host);
     addW(outer, scroll, 1);
 
-    // ---- status bar: exactly what SyncNote is bound to, and whether the
-    // Notes node made it into the render path. If something looks wrong in
-    // the scene, this line says why. ----
+    // ---- bottom action row: bulk operations, away from the daily buttons.
+    var bottomW = new QWidget();
+    var bottom = new QHBoxLayout(bottomW);
+    bottom.setContentsMargins(0, 0, 0, 0);
+    addW(bottom, new QWidget(), 1); // right-align the actions
+    var copyBtn = new QPushButton("Copy All");
+    copyBtn.toolTip = "Copy every note as plain text — paste into any app";
+    copyBtn.minimumWidth = 150; // room for the "Copied ✓" feedback text
+    var clearBtn = new QPushButton("Clear all");
+    clearBtn.toolTip = "Clear notes and/or sub art (asks first)";
+    addW(bottom, copyBtn);
+    addW(bottom, clearBtn);
+    addW(outer, bottomW);
+
+    // ---- status bar: just the stable facts. Connection/render verdicts
+    // live in the Message Log (v0.19.0 cleanup). ----
     var statusLbl = new QLabel(
       "Layer: " + layer.node + "   •   element #" + layer.elementId +
-      "   •   " + (connectStatus || "") +
       "   •   " + notesPortInfo(layer.node) + "   •   v" + SN_VERSION);
     statusLbl.styleSheet = "color: gray; font-size: 10px;";
     statusLbl.wordWrap = true;
@@ -1427,6 +1475,143 @@ function SyncNote() {
       trace("SceneChangeNotifier unavailable (" + e + ") — falling back to " +
             "click-time self-heal only");
     }
+
+    // ---- Copy All (v0.19.0): notes as plain text for any app ----
+    function buildDigest() {
+      var lines = [];
+      var now = new Date();
+      lines.push("SyncNote — " + scene.currentScene() + " (" +
+                 now.getFullYear() + "-" + pad(now.getMonth() + 1, 2) + "-" +
+                 pad(now.getDate(), 2) + ")");
+      var groups = collectGroups(layer, model);
+      for (var i = 0; i < groups.length; i++) {
+        var g = groups[i];
+        var notes = notesFor(model, layer.elementId, g.drawing);
+        if (notes.length === 0) continue;
+        lines.push("");
+        lines.push((g.frame > 0 ? "Frame " + padFrame(g.frame) : "(not exposed)") +
+                   "  (Sub " + g.drawing + ")");
+        for (var j = 0; j < notes.length; j++) {
+          var mark = (notes[j].done === true) ? "[x]" : "[ ]";
+          var txt = String(notes[j].text).split("\n");
+          lines.push("  " + mark + " " + txt[0]);
+          for (var k = 1; k < txt.length; k++) lines.push("      " + txt[k]);
+        }
+      }
+      return lines.join("\n");
+    }
+
+    // Guaranteed path if the clipboard binding is refused: show the digest
+    // in a selectable box for a manual Ctrl+C.
+    function showDigestFallback(digest) {
+      var d = new QDialog(dlg);
+      d.setWindowTitle("SyncNote — Copy Notes");
+      d.minimumWidth = 380;
+      d.minimumHeight = 300;
+      var v = new QVBoxLayout(d);
+      var hint = new QLabel("Clipboard unavailable on this engine — select " +
+                            "the text below and press Ctrl+C:");
+      hint.wordWrap = true;
+      addW(v, hint);
+      var box = new QTextEdit();
+      box.plainText = digest;
+      try { box.readOnly = true; } catch (e) { /* still selectable */ }
+      addW(v, box, 1);
+      var closeBtn = new QPushButton("Close");
+      closeBtn.clicked.connect(function () { d.accept(); });
+      addW(v, closeBtn);
+      d.exec();
+    }
+
+    var copyRevertTimer = null;
+    copyBtn.clicked.connect(function () {
+      var digest = buildDigest();
+      var ok = false;
+      try {
+        QApplication.clipboard().setText(digest);
+        ok = true;
+      } catch (e) {
+        trace("clipboard unavailable (" + e + ") — showing manual-copy dialog");
+      }
+      if (!ok) { showDigestFallback(digest); return; }
+      trace("notes digest copied to clipboard (" + digest.length + " chars)");
+      copyBtn.text = "Copied to clipboard ✓";
+      try {
+        if (!copyRevertTimer) {
+          try { copyRevertTimer = new QTimer(dlg); }
+          catch (e0) { copyRevertTimer = new QTimer(); }
+          copyRevertTimer.singleShot = true;
+          copyRevertTimer.timeout.connect(function () {
+            try { copyBtn.text = "Copy All"; } catch (e) {}
+          });
+          g_snKeepAlivePanel.push(copyRevertTimer);
+        }
+        copyRevertTimer.stop();
+        copyRevertTimer.start(2500);
+      } catch (e1) { /* feedback text just stays until next click */ }
+    });
+
+    // ---- Clear all (v0.19.0): confirmation with a keyboard default ----
+    // Own QDialog instead of MessageBox: we need four choices, a reliable
+    // Enter default, and known return semantics. Subs are NEVER deleted
+    // here — notes and/or the art inside the subs, per user decision.
+    function askClearChoice() {
+      var d = new QDialog(dlg);
+      d.setWindowTitle("Clear SyncNote data");
+      d.minimumWidth = 380;
+      var v = new QVBoxLayout(d);
+      var lbl = new QLabel(
+        "Clear SyncNote data from this scene?\n" +
+        "Subs stay on the timeline either way. One undo step.");
+      lbl.wordWrap = true;
+      addW(v, lbl);
+
+      var rowW = new QWidget();
+      var row = new QHBoxLayout(rowW);
+      row.setContentsMargins(0, 0, 0, 0);
+      var choice = "";
+      function mkChoice(label, value, isDefault) {
+        var b = new QPushButton(label);
+        try { b.setProperty("default", isDefault); } catch (e0) {}
+        try { b.setProperty("autoDefault", isDefault); } catch (e1) {}
+        b.clicked.connect(function () { choice = value; d.accept(); });
+        addW(row, b);
+      }
+      mkChoice("Clear Both", "both", true); // Enter fires this one
+      mkChoice("Notes Only", "notes", false);
+      mkChoice("Sub Art Only", "art", false);
+      var cancelBtn = new QPushButton("Cancel");
+      try { cancelBtn.setProperty("autoDefault", false); } catch (e2) {}
+      cancelBtn.clicked.connect(function () { d.reject(); }); // Esc also rejects
+      addW(row, cancelBtn);
+      addW(v, rowW);
+
+      d.exec();
+      return choice; // "" = cancelled
+    }
+
+    function doClear(mode) {
+      scene.beginUndoRedoAccum("SyncNote: clear " + mode);
+      try {
+        if (mode === "notes" || mode === "both") {
+          model.notesByDrawing[String(layer.elementId)] = {};
+          saveModel(model);
+        }
+        if (mode === "art" || mode === "both") {
+          clearAllSubArt(layer);
+        }
+        scene.endUndoRedoAccum();
+      } catch (e) {
+        scene.endUndoRedoAccum();
+      }
+      trace("clear (" + mode + ") done — one undo step");
+      refresh();
+    }
+
+    clearBtn.clicked.connect(function () {
+      var mode = askClearChoice();
+      if (mode) doClear(mode);
+    });
 
     // ---- save-on-close (v0.16.0, user decision: option A) ----
     // Closing the panel saves the scene so notes reach disk without anyone
