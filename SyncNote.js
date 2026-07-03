@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.22.0";          // v0.21.x note editing rolled back (see KB §27)
+  var SN_VERSION    = "0.22.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1336,7 +1336,9 @@ function SyncNote() {
         if (done) {
           btn.text = "✓";
           btn.toolTip = "Done — click to reopen";
-          btn.styleSheet = "color: " + SN_GREEN + "; font-weight: bold;";
+          // Scoped to QPushButton: an unscoped stylesheet cascades into the
+          // TOOLTIP too, rendering its text green-on-yellow (unreadable).
+          btn.styleSheet = "QPushButton { color: " + SN_GREEN + "; font-weight: bold; }";
         } else {
           btn.text = "○";
           btn.toolTip = "Mark as done";
