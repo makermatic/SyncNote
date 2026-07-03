@@ -701,6 +701,9 @@ Inline editing via **state-driven rebuild** — no in-place widget surgery (the 
 - Glyph choice: text pencil **✎** over emoji ✏️ (plain glyphs have been flawless in these buttons; color emoji in Qt button text is per-system roulette).
 - Deleting a note that's being edited clears the edit state first.
 
+### v0.21.1 — editing reworked: the add box IS the editor (user's design)
+v0.21.0's in-card editor failed live testing twice over: (1) a QTextEdit prefilled BEFORE layout measures its height against the wrong wrap width → tiny box with scrollbars (the add box never showed this because it starts empty — **prefilled inputs need a post-layout re-measure**, now a 60 ms timer that also covers restored drafts, which had the same latent bug); (2) entering edit mode didn't anchor the scroll. Zack proposed the better architecture and it shipped: **✎ loads the note's text into the group's existing "Add a note…" box**, whose button is built fresh as **Save** (no post-show label swap), commit updates `note.text` instead of adding; `refresh(drawingName)` pins the group + editor under the toolbar with the highlight. The edited note's meta shows a green "• editing below…" marker; ✎ toggles to cancel; empty save = cancel. State: `editingNoteId` + `editingDrawing` + `editDraft` (stash-integrated). Design lesson: **when a rendering path is known-good (the add box), route new features through it rather than cloning it in a new context.**
+
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
