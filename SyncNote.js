@@ -35,7 +35,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.14.2";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.14.3";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1104,16 +1104,14 @@ function SyncNote() {
         };
       })(note.id, drawingName));
 
-      // Frame.io-style check circle, small, right under the ✕. Toggling
-      // restyles in place — deliberately NO refresh(), so scroll/drafts/
-      // focus are untouched. Rebuilds re-read note.done from the model.
+      // Done toggle, right under the ✕ — a NATIVE button just like it, so
+      // shape, size, and hover thickness match by construction (custom
+      // stylesheets are what caused the v0.14.2 misalignment/hover
+      // mismatch). ○ = open, green ✓ = done. Toggling restyles in place —
+      // deliberately NO refresh(), so scroll/drafts/focus are untouched;
+      // rebuilds re-read note.done from the model.
       var doneBtn = new QPushButton("");
-      doneBtn.minimumWidth = 24;
-      doneBtn.maximumWidth = 24;
-      doneBtn.minimumHeight = 24;
-      doneBtn.maximumHeight = 24;
-      try { doneBtn.cursor = new QCursor(Qt.PointingHandCursor); }
-      catch (e) { /* cosmetic only */ }
+      doneBtn.maximumWidth = 28; // identical geometry to the ✕ above it
       styleDoneToggle(doneBtn, note.done === true);
       doneBtn.clicked.connect(function () {
         note.done = (note.done !== true); // missing field counts as unchecked
@@ -1121,20 +1119,13 @@ function SyncNote() {
         styleDoneToggle(doneBtn, note.done);
       });
 
-      // Right column: ✕ on top, circle centered beneath it, packed to top.
-      var doneRowW = new QWidget();
-      var doneRow = new QHBoxLayout(doneRowW);
-      doneRow.setContentsMargins(0, 4, 0, 0);
-      addW(doneRow, new QWidget(), 1);
-      addW(doneRow, doneBtn);
-      addW(doneRow, new QWidget(), 1);
-
+      // Right column: ✕ on top, done toggle beneath it, packed to the top.
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
       addW(rightCol, delBtn);
-      addW(rightCol, doneRowW);
-      addW(rightCol, new QWidget(), 1); // pack ✕ + circle to the top
+      addW(rightCol, doneBtn);
+      addW(rightCol, new QWidget(), 1);
       addW(h, rightColW);
 
       return card;
@@ -1208,33 +1199,21 @@ function SyncNote() {
       hlGroup = null;
     }
 
-    // Completion circle styling (Frame.io-style, filled variant):
-    //   open   = hollow gray circle; hover brightens/thickens the ring;
-    //            press previews a faint green fill
-    //   done   = solid SN_GREEN circle with a white ✓; hover = brighter
-    //            green (Material 400), press = darker (Material 700)
-    // All interactivity via stylesheet :hover/:pressed pseudo-states — the
-    // style engine tracks the mouse, no script runs, no event filters.
+    // Done-toggle styling: a NATIVE button (no border/shape stylesheets),
+    // so it renders, hovers, and presses exactly like the ✕ next to it.
+    // State is the glyph: ○ = open, bold green ✓ = done. The checked state
+    // sets only a text color — if that turns out to suppress the native
+    // hover on some engine, removing that one line is the fallback.
     function styleDoneToggle(btn, done) {
       try {
         if (done) {
           btn.text = "✓";
           btn.toolTip = "Done — click to reopen";
-          btn.styleSheet =
-            "QPushButton { border: 1px solid " + SN_GREEN + "; border-radius: 12px; " +
-            "background: " + SN_GREEN + "; color: #ffffff; font-weight: bold; " +
-            "font-size: 12px; padding: 0; } " +
-            "QPushButton:hover { background: #66BB6A; border-color: #66BB6A; } " +
-            "QPushButton:pressed { background: #388E3C; border-color: #388E3C; }";
+          btn.styleSheet = "color: " + SN_GREEN + "; font-weight: bold;";
         } else {
-          btn.text = "";
+          btn.text = "○";
           btn.toolTip = "Mark as done";
-          btn.styleSheet =
-            "QPushButton { border: 1px solid #999999; border-radius: 12px; " +
-            "background: transparent; padding: 0; } " +
-            "QPushButton:hover { border: 2px solid #cccccc; } " +
-            "QPushButton:pressed { border: 2px solid " + SN_GREEN + "; " +
-            "background: rgba(76, 175, 80, 80); }";
+          btn.styleSheet = "";
         }
       } catch (e) {
         // Styling refused by the engine: degrade to a plain text toggle.
