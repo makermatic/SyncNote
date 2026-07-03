@@ -668,6 +668,13 @@ Implementation (`dlg.rejected` handler):
 4. **Clear all** — confirmation via **our own modal QDialog** (MessageBox rejected: 3-button max, undocumented returns, no reliable keyboard default). Buttons: **[Clear Both]** (Enter default via `setProperty("default"/"autoDefault", true)`), **[Notes Only]**, **[Sub Art Only]**, **[Cancel]** (Esc). Semantics (user decision): **subs are never deleted** — "Notes Only" wipes the model's notes, "Sub Art Only" erases drawn content inside every sub, "Clear Both" does both. One undo accum wraps the whole clear.
 5. **`clearAllSubArt()`** — `DrawingTools.clearArt({drawing: key, art: 0..3})` per drawing (all four art layers), scoped to the Notes element ID by construction. Config format verified in docs, unproven live: tries `Drawing.Key({elementId, exposure})`, falls back to a plain `{elementId, exposure}` object, and traces a cleared/FAILED tally per run. If an engine refuses both forms, the tally in the Message Log is the round-two evidence.
 
+### v0.19.1 — live-test fixes (clipboard ✓, clearArt ✓ confirmed working)
+v0.19.0 test results: clipboard copy **works** (pastes into Slack etc.), Sub Art Only **works**, Notes Only works. Fixes from the same pass:
+1. **Copy button resized on click** — v0.14.4's lesson again (post-show text change recomputes size hint): width pinned min=max 175.
+2. **Feedback text reportedly not reverting** — timer construction is identical to the proven highlight fade, so likely observation timing; added a `trace("copy feedback reverted")` so the Message Log settles it either way.
+3. **Clear Both upgraded to full reset per user:** notes + art + **all exposure removed** (`clearAllExposure`: every frame `setEntry("")`) and the panel **closes itself** afterward (routing through save-on-close, so the reset lands on disk — and no refresh needed). Notes Only / Sub Art Only still keep subs and refresh in place; confirm-dialog copy updated to say so.
+4. **Stats + action buttons share one bottom row** (stats left with stretch, buttons right), per user draw-over.
+
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.

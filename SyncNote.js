@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.19.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.19.1";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -738,6 +738,18 @@ function SyncNote() {
           (failed ? ", " + failed + " FAILED (see KB §26 if this persists)" : ""));
   }
 
+  // Remove ALL exposure from the Notes column — used by Clear Both for a
+  // full reset. (Drawing files stay in the element; with no exposure and
+  // no notes they're hidden from the panel and render nothing.)
+  function clearAllExposure(layer) {
+    try {
+      var n = frame.numberOf();
+      for (var f = 1; f <= n; f++) {
+        try { column.setEntry(layer.column, 1, f, ""); } catch (e) {}
+      }
+    } catch (e) { /* caller's undo accum still closes */ }
+  }
+
   // Every drawing in the element, plus any drawing that has notes,
   // each with its first exposed frame (-1 if not currently exposed).
   function collectGroups(layer, model) {
@@ -872,28 +884,29 @@ function SyncNote() {
     scroll.setWidget(host);
     addW(outer, scroll, 1);
 
-    // ---- bottom action row: bulk operations, away from the daily buttons.
+    // ---- bottom row: stats on the left, bulk actions on the right (one
+    // row, per user sketch). Connection/render verdicts live in the
+    // Message Log.
     var bottomW = new QWidget();
     var bottom = new QHBoxLayout(bottomW);
     bottom.setContentsMargins(0, 0, 0, 0);
-    addW(bottom, new QWidget(), 1); // right-align the actions
-    var copyBtn = new QPushButton("Copy All");
-    copyBtn.toolTip = "Copy every note as plain text — paste into any app";
-    copyBtn.minimumWidth = 150; // room for the "Copied ✓" feedback text
-    var clearBtn = new QPushButton("Clear all");
-    clearBtn.toolTip = "Clear notes and/or sub art (asks first)";
-    addW(bottom, copyBtn);
-    addW(bottom, clearBtn);
-    addW(outer, bottomW);
-
-    // ---- status bar: just the stable facts. Connection/render verdicts
-    // live in the Message Log (v0.19.0 cleanup). ----
     var statusLbl = new QLabel(
       "Layer: " + layer.node + "   •   element #" + layer.elementId +
       "   •   " + notesPortInfo(layer.node) + "   •   v" + SN_VERSION);
     statusLbl.styleSheet = "color: gray; font-size: 10px;";
     statusLbl.wordWrap = true;
-    addW(outer, statusLbl);
+    addW(bottom, statusLbl, 1);
+    var copyBtn = new QPushButton("Copy All");
+    copyBtn.toolTip = "Copy every note as plain text — paste into any app";
+    // Pinned width: the label swaps to "Copied to clipboard ✓" and a
+    // post-show text change must never resize the button (v0.14.4 lesson).
+    copyBtn.minimumWidth = 175;
+    copyBtn.maximumWidth = 175;
+    var clearBtn = new QPushButton("Clear all");
+    clearBtn.toolTip = "Clear notes, sub art, or everything (asks first)";
+    addW(bottom, copyBtn);
+    addW(bottom, clearBtn);
+    addW(outer, bottomW);
 
     // ---- staleness state (v0.10.0) ----
     var shownSig = "";    // drawing:frame signature of what's displayed
@@ -1543,6 +1556,7 @@ function SyncNote() {
           copyRevertTimer.singleShot = true;
           copyRevertTimer.timeout.connect(function () {
             try { copyBtn.text = "Copy All"; } catch (e) {}
+            trace("copy feedback reverted"); // proves the timer fired
           });
           g_snKeepAlivePanel.push(copyRevertTimer);
         }
@@ -1562,7 +1576,8 @@ function SyncNote() {
       var v = new QVBoxLayout(d);
       var lbl = new QLabel(
         "Clear SyncNote data from this scene?\n" +
-        "Subs stay on the timeline either way. One undo step.");
+        "Notes Only / Sub Art Only keep the subs on the timeline.\n" +
+        "Clear Both removes everything and closes the panel. One undo step.");
       lbl.wordWrap = true;
       addW(v, lbl);
 
@@ -1600,12 +1615,21 @@ function SyncNote() {
         if (mode === "art" || mode === "both") {
           clearAllSubArt(layer);
         }
+        if (mode === "both") {
+          clearAllExposure(layer); // full reset: subs leave the timeline too
+        }
         scene.endUndoRedoAccum();
       } catch (e) {
         scene.endUndoRedoAccum();
       }
       trace("clear (" + mode + ") done — one undo step");
-      refresh();
+      if (mode === "both") {
+        // Full reset ends the review session: close the panel (which also
+        // routes through save-on-close, landing the reset on disk).
+        dlg.close();
+      } else {
+        refresh();
+      }
     }
 
     clearBtn.clicked.connect(function () {
