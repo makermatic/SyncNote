@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.21.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.22.0";          // v0.21.x note editing rolled back (see KB §27)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -929,9 +929,6 @@ function SyncNote() {
     var lastSignal = "";  // which notifier signal requested the last check
     var hlGroup = null;   // currently highlighted group card
     var hlTimer = null;   // clears the highlight after a moment
-    var editingNoteId = null;  // note being edited via ✎, or null
-    var editingDrawing = null; // which group's add box doubles as the editor
-    var editDraft = null;      // unsaved edit text, preserved across rebuilds
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -952,19 +949,13 @@ function SyncNote() {
       var savedScroll = 0;
       try { savedScroll = scroll.verticalScrollBar().value; } catch (e) {}
 
-      // Stash half-typed text so an auto-refresh can't eat it. The group
-      // input doubles as the note editor while editingDrawing matches, so
-      // its content goes to editDraft instead of the add-drafts.
+      // Stash half-typed notes so an auto-refresh can't eat a draft.
       try {
         for (var dn in liveInputs) {
           if (!liveInputs.hasOwnProperty(dn)) continue;
           var draft = "";
           try { draft = String(liveInputs[dn].plainText); } catch (e) {}
-          if (dn === editingDrawing && editingNoteId !== null) {
-            editDraft = draft;
-          } else if (draft.replace(/^\s+|\s+$/g, "") !== "") {
-            drafts[dn] = draft;
-          }
+          if (draft.replace(/^\s+|\s+$/g, "") !== "") drafts[dn] = draft;
         }
       } catch (e) { /* drafts are best-effort */ }
       liveInputs = {};
@@ -1097,16 +1088,6 @@ function SyncNote() {
 
       var notes = notesFor(model, layer.elementId, drawingName);
 
-      // Is one of THIS group's notes being edited? Then the add box below
-      // doubles as its editor (v0.21.1) — reusing the input that always
-      // renders correctly instead of conjuring a new widget mid-card.
-      var editingNote = null;
-      if (editingNoteId !== null && editingDrawing === drawingName) {
-        for (var en = 0; en < notes.length; en++) {
-          if (notes[en].id === editingNoteId) { editingNote = notes[en]; break; }
-        }
-      }
-
       // Header row: green clickable "Frame 009" link (padded to scene
       // length digits) — plus, when the group has NO notes, a remove
       // button that deletes the sub itself. Link-based navigation is
@@ -1161,35 +1142,12 @@ function SyncNote() {
       try { input.placeholderText = "Add a note…  (Enter = save, Shift+Enter = new line)"; }
       catch (e) { /* placeholder not bound in some engines; cosmetic */ }
       liveInputs[drawingName] = input;
-
-      var prefill = null;
-      if (editingNote) { // the box becomes the editor for this note
-        prefill = (editDraft !== null) ? editDraft : String(editingNote.text);
-      } else if (drafts[drawingName]) { // restore an interrupted draft
-        prefill = drafts[drawingName];
+      if (drafts[drawingName]) { // restore text an auto-refresh interrupted
+        try { input.plainText = drafts[drawingName]; } catch (e) {}
         delete drafts[drawingName];
       }
-      if (prefill !== null) {
-        try { input.plainText = prefill; } catch (e) {}
-      }
       sizeNoteInput(input);
-      if (prefill !== null) {
-        // Prefilled text measures against the WRONG width before layout
-        // (the v0.21.0 tiny-scrollbox bug) — re-measure once geometry is
-        // real. Applies to restored drafts too; same latent bug.
-        try {
-          var rs;
-          try { rs = new QTimer(dlg); } catch (e0) { rs = new QTimer(); }
-          g_snKeepAlive.push(rs);
-          rs.singleShot = true;
-          rs.timeout.connect(function () {
-            try { sizeNoteInput(input); } catch (e) {}
-          });
-          rs.start(60);
-        } catch (e) { /* immediate sizing above is the fallback */ }
-      }
-      // Fresh-built with the right label — never swapped after show.
-      var noteBtn = new QPushButton(editingNote ? "Save" : "Add");
+      var noteBtn = new QPushButton("Add");
       addW(addRow, input, 1);
       addW(addRow, noteBtn);
       addW(v, addRowW);
@@ -1198,19 +1156,6 @@ function SyncNote() {
         var txt = "";
         try { txt = String(input.plainText); } catch (e) {}
         txt = txt.replace(/^\s+|\s+$/g, "");
-        if (editingNote) {
-          // Save the edit. Empty text = cancel — deleting is the ✕'s job.
-          editingNoteId = null;
-          editingDrawing = null;
-          editDraft = null;
-          if (txt !== "" && txt !== String(editingNote.text)) {
-            editingNote.text = txt;
-            saveModel(model);
-          }
-          try { input.plainText = ""; } catch (e) {}
-          refresh();
-          return;
-        }
         if (txt === "") return;
         addNote(model, layer.elementId, drawingName, txt);
         saveModel(model);
@@ -1268,15 +1213,9 @@ function SyncNote() {
         metaHtml += '<span style="color:gray; font-size:10px;">Sub ' +
                     drawingName + "</span>";
       }
-      if (editingNoteId === note.id) { // which note the add box is editing
-        metaHtml += '<span style="color:' + SN_GREEN +
-                    '; font-size:10px;">   •   editing below…</span>';
-      }
       var meta = new QLabel(metaHtml);
       if (frameNo > 0) meta.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
       addW(textCol, meta);
-
-      var isEditing = (editingNoteId === note.id);
 
       var textLbl = new QLabel(note.text);
       textLbl.wordWrap = true;
@@ -1300,41 +1239,11 @@ function SyncNote() {
       delBtn.maximumHeight = 20; // ~44px instead of the old ~55px
       delBtn.clicked.connect((function (nid, dn) {
         return function () {
-          if (editingNoteId === nid) {
-            editingNoteId = null;
-            editingDrawing = null;
-            editDraft = null;
-          }
           deleteNote(model, layer.elementId, dn, nid);
           saveModel(model);
           refresh();
         };
       })(note.id, drawingName));
-
-      // Edit toggle (✎), sandwiched between ✕ and ○. Loads this note's
-      // text into the GROUP'S add box (which becomes "Save") — v0.21.1
-      // approach after the in-card editor mis-sized. While editing, the
-      // same button cancels (Esc would close the whole panel, so it is
-      // deliberately NOT the cancel key).
-      var editBtn = new QPushButton("✎");
-      editBtn.toolTip = isEditing ? "Cancel editing" : "Edit note (in the box below)";
-      editBtn.minimumWidth = 28;
-      editBtn.maximumWidth = 28;
-      editBtn.minimumHeight = 20;
-      editBtn.maximumHeight = 20;
-      editBtn.clicked.connect(function () {
-        if (isEditing) { // cancel
-          editingNoteId = null;
-          editingDrawing = null;
-          editDraft = null;
-          refresh();
-        } else {
-          editingNoteId = note.id;
-          editingDrawing = drawingName;
-          editDraft = null; // fresh edit starts from the saved text
-          refresh(drawingName); // pin the group + its editor under the toolbar
-        }
-      });
 
       // Done toggle, right under the ✕ — a NATIVE button just like it, so
       // shape, size, and hover thickness match by construction (custom
@@ -1352,17 +1261,17 @@ function SyncNote() {
         note.done = (note.done !== true); // missing field counts as unchecked
         saveModel(model);
         styleDoneToggle(doneBtn, note.done);
-        if (textLbl) dimNoteText(textLbl, note.done); // no label in edit mode
+        dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
-      // ✕ / ✎ / ○ stacked vertically at 28×20 each (v0.21.0 order per
-      // user; the taller card is the accepted trade). Spacer pins them top.
+      // ✕ over ✓, vertical again (v0.20.0 user choice) — but with SHORTER
+      // buttons (28×20) so the stack costs ~44px instead of the ~55px that
+      // bloated one-line cards back in v0.17.0. Spacer pins the pair top.
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
       rightCol.setSpacing(4);
       addW(rightCol, delBtn);
-      addW(rightCol, editBtn);
       addW(rightCol, doneBtn);
       addW(rightCol, new QWidget(), 1);
       addW(h, rightColW);
