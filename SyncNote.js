@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.22.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.22.2";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -1204,8 +1204,10 @@ function SyncNote() {
       var textCol = new QVBoxLayout(textColW);
       textCol.setContentsMargins(0, 0, 0, 0);
 
-      var metaHtml = '<span style="color:gray; font-size:10px;">' +
-                     relativeDate(note) + "   •   </span>";
+      // Sub link FIRST, date second (v0.22.2): the link then sits directly
+      // under the green Frame header link, stacking the two click targets
+      // into one wide navigation zone at the card's left edge.
+      var metaHtml = "";
       if (frameNo > 0) {
         metaHtml += '<a href="#" style="' + LINK_STYLE + ' font-size:10px;">Sub ' +
                     drawingName + "</a>";
@@ -1213,6 +1215,8 @@ function SyncNote() {
         metaHtml += '<span style="color:gray; font-size:10px;">Sub ' +
                     drawingName + "</span>";
       }
+      metaHtml += '<span style="color:gray; font-size:10px;">   •   ' +
+                  relativeDate(note) + "</span>";
       var meta = new QLabel(metaHtml);
       if (frameNo > 0) meta.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
       addW(textCol, meta);
