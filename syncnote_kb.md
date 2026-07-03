@@ -638,6 +638,26 @@ First run in a **rigged scene** (`LL_Llama_Rig`, character inside a GROUP node) 
 
 Lesson for the pattern book: **a try-verify-retry loop must end on the best-known state, not on the last experiment.**
 
+---
+
+## 25. Implementation log — v0.16.0 (save-on-close)
+
+Closes the last workflow gap (§7.3.5 #9: metadata reaches disk only on scene save). User decision: **option A — silent save when the panel closes**, chosen over a confirm-prompt (B, below), a sidecar backup file (C), and a passive reminder (D).
+
+Implementation (`dlg.rejected` handler):
+- Fires only when **notes changed this session** (`g_snNotesDirty`, module-level so it survives panel relaunches; set by `saveModel`, cleared on successful save or when the scene turns out clean) **and** `scene.isDirty()` — a manual Ctrl+S in between means no auto-save.
+- Relaunch closes are marked via `setProperty("snSilentClose", true)` in `closeExistingDialog` and skipped — the new panel inherits responsibility.
+- At most one `scene.saveAll()` per session-close → no repeated-save xstage churn (user's explicit concern).
+- Outcome traced to the Message Log either way; a failed save warns to save manually.
+- Known trade-off (accepted): `saveAll()` commits the **whole scene**, including any accidental artwork changes made while reviewing.
+- Known edge (accepted): if Harmony re-evaluates the script file between panel sessions, `g_snNotesDirty` resets and notes added in the *previous* unsaved session won't trigger the auto-save.
+
+### §25.1 — Backup design: option B, the confirm-prompt variant
+Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
+- Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.
+- API: `MessageBox.warning(text, button0, button1, button2, title, parent)` supports up to 3 buttons (pass 1 to show, 0 to hide) — **verified to exist, but the return-value semantics are under-documented** (classic Qt3-style: expected to return the pressed button's index/value). Needs one live probe: log the return value for each button before trusting it. If the return proves undecipherable, degrade to option D (amber "unsaved notes — Ctrl+S" status-bar reminder) rather than guessing.
+- Switch is localized: replace the `scene.saveAll()` call inside the `dlg.rejected` handler with the prompt logic; everything else (dirty tracking, silent-close marker) is shared.
+
 ### v0.12.2 — Add Note focuses the new group; thinner highlight
 - `refresh(focusDrawing)` optional param: when set (used by the Add Note button), the rebuild **skips the scroll-position restore** and instead scrolls to + flashes that group (`focusGroup()` — applied immediately and again at 60 ms, because the restore path's own delayed timer taught us post-rebuild scrolls get clamped before layout settles; the two mechanisms are mutually exclusive per refresh so they can't fight).
 - Highlight border 2px → 1px (user taste).

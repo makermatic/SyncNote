@@ -30,12 +30,14 @@
 var g_snKeepAlive = [];      // per-refresh objects (card filters, scroll timer)
 var g_snKeepAlivePanel = []; // panel-lifetime objects (SceneChangeNotifier,
                              // stale-check timer) — must survive refreshes
+var g_snNotesDirty = false;  // notes changed since the scene was last saved —
+                             // module-level so it survives panel relaunches
 
 function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.15.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.16.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -117,6 +119,7 @@ function SyncNote() {
   }
 
   function saveModel(model) {
+    g_snNotesDirty = true; // cleared by the save-on-close in buildDialog
     scene.setMetadata({
       name:    META_KEY,
       type:    META_TYPE,
@@ -773,6 +776,9 @@ function SyncNote() {
       var tls = QApplication.topLevelWidgets();
       for (var i = 0; i < tls.length; i++) {
         if (tls[i] && tls[i].objectName === DLG_NAME) {
+          // Mark as an internal close (relaunch): the old panel's
+          // save-on-close must not fire — the new panel takes over.
+          try { tls[i].setProperty("snSilentClose", true); } catch (e) {}
           tls[i].close();
           tls[i].deleteLater();
         }
@@ -1404,6 +1410,30 @@ function SyncNote() {
       trace("SceneChangeNotifier unavailable (" + e + ") — falling back to " +
             "click-time self-heal only");
     }
+
+    // ---- save-on-close (v0.16.0, user decision: option A) ----
+    // Closing the panel saves the scene so notes reach disk without anyone
+    // remembering Ctrl+S — but only when it's actually needed:
+    //   - notes changed this session (g_snNotesDirty), AND
+    //   - the scene still has unsaved changes (a manual Ctrl+S clears both).
+    // Relaunch-closes are marked snSilentClose and skipped. At most one
+    // save per session-close — no xstage churn.
+    // NOTE: saveAll() commits the WHOLE scene, not just notes. If teachers
+    // prefer confirming, the prompt variant is documented in the KB (§25).
+    dlg.rejected.connect(function () {
+      try {
+        try { if (dlg.property("snSilentClose")) return; } catch (e0) {}
+        if (!g_snNotesDirty) return; // nothing of ours to persist
+        var dirty = true;
+        try { dirty = scene.isDirty(); } catch (e1) {}
+        if (!dirty) { g_snNotesDirty = false; return; } // already saved manually
+        var ok = false;
+        try { ok = scene.saveAll(); } catch (e2) {}
+        if (ok) g_snNotesDirty = false;
+        trace(ok ? "panel closed — scene saved (notes persisted)"
+                 : "panel closed — auto-save FAILED; save manually to keep notes");
+      } catch (e) { /* closing must never be blocked */ }
+    });
 
     refresh();
     dlg.show();
