@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.20.2";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.20.3";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -994,6 +994,11 @@ function SyncNote() {
       var w = liveGroups[drawingName];
       if (!w) return;
       try {
+        // Right after a rebuild the cards aren't measured yet and pos.y is
+        // garbage — which made "scroll to new note" only work when the bar
+        // already sat at the top (garbage 0 = top, correct by luck).
+        // Force the layout to compute geometry before reading positions.
+        try { listLayout.activate(); } catch (e9) {}
         var y = 0;
         try { y = (typeof w.pos.y === "function") ? w.pos.y() : w.pos.y; }
         catch (e0) { y = Number(w.y) || 0; }
@@ -1005,23 +1010,27 @@ function SyncNote() {
       } catch (e) { /* leave the panel scroll as-is */ }
     }
 
-    // Scroll a (usually new) group to the top and flash it — applied twice
-    // like restoreScroll, because right after a rebuild the list hasn't
-    // been measured yet and the first scroll can be clamped.
+    // Scroll a (usually new) group to the top and flash it — applied three
+    // times (now, 60 ms, 250 ms): right after a rebuild the list may not be
+    // measured yet and early scrolls can aim at stale positions, especially
+    // while Harmony is busy.
     function focusGroup(drawingName) {
       scrollGroupToTop(drawingName);
       highlightGroup(drawingName);
-      try {
-        var t;
-        try { t = new QTimer(dlg); }
-        catch (e0) { t = new QTimer(); }
-        g_snKeepAlive.push(t);
-        t.singleShot = true;
-        t.timeout.connect(function () {
-          try { scrollGroupToTop(drawingName); } catch (e) {}
-        });
-        t.start(60);
-      } catch (e) { /* immediate attempt above already did its best */ }
+      var delays = [60, 250];
+      for (var i = 0; i < delays.length; i++) {
+        try {
+          var t;
+          try { t = new QTimer(dlg); }
+          catch (e0) { t = new QTimer(); }
+          g_snKeepAlive.push(t);
+          t.singleShot = true;
+          t.timeout.connect(function () {
+            try { scrollGroupToTop(drawingName); } catch (e) {}
+          });
+          t.start(delays[i]);
+        } catch (e) { /* earlier attempts already did their best */ }
+      }
     }
 
     // Gray out ◀/▶ when there's no note strictly before/after the playhead.

@@ -688,6 +688,9 @@ The shrink persisted even with pinned width. Best explanation of all the evidenc
 2. `nb()` replaces spaces inside each stat phrase with **U+00A0 non-breaking spaces**, so the status label wraps only at the `•` separators — no more "port 6 / of 7" splits.
 3. **War story for the pattern book:** the NBSP is stored as a *literal* character in the source (marked with a NOTE comment) because every attempt to store it as a ` ` escape got normalized back to the raw character by editing tooling — and a raw NBSP is indistinguishable from a space in most editors, which caused a whole phantom-debugging session (edits "failing to match", replacements that were secretly no-ops). Verification tool of choice: dump the line's codepoints. Encoding safety is proven by precedent — the file ships ✓ ✕ ◀ ▶ • as UTF-8 and Harmony renders them all.
 
+### v0.20.3 — scroll-to-new-note works from any scroll position
+User repro: Add Note only snapped the new group to the top if the scrollbar already sat at the top. Cause: post-rebuild, card `pos.y` is unmeasured garbage until the layout computes geometry — "garbage ≈ 0 ≈ top" was only accidentally correct from the top. Fixes: `scrollGroupToTop` calls `listLayout.activate()` (forces geometry) before reading positions, and `focusGroup` retries at 60 ms **and** 250 ms for busy-Harmony insurance. Pattern-book: **never read widget geometry in the same breath as a rebuild — activate the layout first, and re-apply on a timer.**
+
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.
