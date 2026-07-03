@@ -657,6 +657,9 @@ Implementation (`dlg.rejected` handler):
 2. **Add Note now scrolls the new group to the TOP of the viewport** (`scrollGroupToTop`: card `pos.y` − 6px margin into the scrollbar, clamped) instead of merely "visible" — its header + input land right under the toolbar, per user mock. `focusGroup` keeps the double-apply (immediate + 60 ms) for post-rebuild layout settling.
 3. **v0.17.1:** ◀/▶ scrub switched to the same pin-to-top behavior (user: consistency over the centered variant); `ensureGroupVisible` removed as dead code — `scrollGroupToTop` is now the single panel-scroll primitive.
 
+### v0.18.0 — the Notes node is always SyncNote green
+`applyNotesColor()`: `node.setColor(readPath, new ColorRGBA(76, 175, 80, 255))` — #4CAF50 (user tested other greens/saturations and settled on the panel's link green), channels 0–255 per the ColorRGBA docs. Run on **every launch** rather than only at creation: idempotent, and it heals scenes created by pre-color builds or manually reset colors. `node.resetColor()` exists if anyone ever wants it off.
+
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.

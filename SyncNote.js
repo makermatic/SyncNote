@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.17.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.18.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -70,6 +70,7 @@ function SyncNote() {
       return;
     }
     var connectStatus = connectNotesNode(layer.node); // wire + verify by RENDER ORDER
+    applyNotesColor(layer.node); // paint it SyncNote green, every run
 
     model.syncNoteElementId = layer.elementId;
     saveModel(model);
@@ -577,6 +578,17 @@ function SyncNote() {
       return "not on " + shortName(comp);
     } catch (e) {
       return "";
+    }
+  }
+
+  // Paint the Notes node in the SyncNote green (#4CAF50) so it's instantly
+  // recognizable in the Node View and Timeline. Applied on every launch —
+  // idempotent, and it heals scenes from pre-color builds or manual resets.
+  function applyNotesColor(readPath) {
+    try {
+      node.setColor(readPath, new ColorRGBA(76, 175, 80, 255)); // = SN_GREEN
+    } catch (e) {
+      trace("could not set the Notes node colour (" + e + ")");
     }
   }
 
