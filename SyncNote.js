@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.20.1";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.20.2";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -889,11 +889,18 @@ function SyncNote() {
     // Message Log.
     var bottomW = new QWidget();
     var bottom = new QHBoxLayout(bottomW);
-    bottom.setContentsMargins(0, 0, 0, 0);
-    bottom.setSpacing(8); // breathing room between stats and buttons
+    bottom.setContentsMargins(0, 8, 0, 0); // breathing room above the strip
+    bottom.setSpacing(8); // ...and between stats and buttons
+    // Non-breaking spaces INSIDE each stat phrase: QLabel otherwise wraps
+    // at any space, splitting phrases like "port 6 / of 7" mid-thought.
+    // Wraps now happen only at the bullet separators.
+    // NOTE: the replacement string below is a LITERAL U+00A0 (non-breaking
+    // space) — it looks identical to a plain space in most editors. Safe:
+    // this file is UTF-8 and Harmony reads it as such (see ✓ ✕ • glyphs).
+    function nb(s) { return String(s).replace(/ /g, " "); }
     var statusLbl = new QLabel(
-      "Layer: " + layer.node + "   •   element #" + layer.elementId +
-      "   •   " + notesPortInfo(layer.node) + "   •   v" + SN_VERSION);
+      nb("Layer: " + layer.node) + "  •  " + nb("element #" + layer.elementId) +
+      "  •  " + nb(notesPortInfo(layer.node)) + "  •  " + nb("v" + SN_VERSION));
     statusLbl.styleSheet = "color: gray; font-size: 10px;";
     statusLbl.wordWrap = true;
     // Compressible: without an explicit minimum, this label's size hint

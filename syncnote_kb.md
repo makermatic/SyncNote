@@ -683,6 +683,11 @@ v0.19.0 test results: clipboard copy **works** (pastes into Slack etc.), Sub Art
 ### v0.20.1 — Copy button made fully static (user decision)
 The shrink persisted even with pinned width. Best explanation of all the evidence: **on this engine, min/max pins only take effect at the NEXT relayout**, and the feedback text change was itself the relayout trigger — so the button sat at natural size from launch, then snapped to the pin on first click. Every variant of label-swapping feedback caused some size glitch (v0.19.0 → v0.20.0 → here). Resolution: **no text change, no pin, no revert timer** — the button reads "Copy All" forever and never has a reason to move. Success feedback = the Message Log trace + the paste itself working; clipboard failure still surfaces visibly via the manual-copy fallback dialog. Pattern-book lesson: **post-show label swaps on buttons are a size-glitch factory in these bindings — prefer static labels; if feedback must be visual, put it in a widget that already reflows (e.g. a wrapping status label).**
 
+### v0.20.2 — bottom-strip padding + no mid-phrase wraps in the stats
+1. 8px top margin on the bottom row (breathing room between list and strip, per user screenshot comparison with v0.16.0).
+2. `nb()` replaces spaces inside each stat phrase with **U+00A0 non-breaking spaces**, so the status label wraps only at the `•` separators — no more "port 6 / of 7" splits.
+3. **War story for the pattern book:** the NBSP is stored as a *literal* character in the source (marked with a NOTE comment) because every attempt to store it as a ` ` escape got normalized back to the raw character by editing tooling — and a raw NBSP is indistinguishable from a space in most editors, which caused a whole phantom-debugging session (edits "failing to match", replacements that were secretly no-ops). Verification tool of choice: dump the line's codepoints. Encoding safety is proven by precedent — the file ships ✓ ✕ ◀ ▶ • as UTF-8 and Harmony renders them all.
+
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.
