@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.16.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.17.0";          // shown in title + status bar so we always know which build runs
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -902,11 +902,29 @@ function SyncNote() {
       updateScrubButtons();
     }
 
-    // Scroll to a group card and flash it — applied twice like
-    // restoreScroll, because right after a rebuild the list hasn't been
-    // measured yet and the first scroll can be clamped.
+    // Align a group card's top with the viewport top, so its header and
+    // "Add a note…" input land right under the toolbar (a fresh sub should
+    // appear next to the Add Note button, not somewhere mid-list).
+    function scrollGroupToTop(drawingName) {
+      var w = liveGroups[drawingName];
+      if (!w) return;
+      try {
+        var y = 0;
+        try { y = (typeof w.pos.y === "function") ? w.pos.y() : w.pos.y; }
+        catch (e0) { y = Number(w.y) || 0; }
+        var sb = scroll.verticalScrollBar();
+        var target = y - 6; // small breathing room above the card
+        if (target < 0) target = 0;
+        if (target > Number(sb.maximum)) target = Number(sb.maximum);
+        sb.value = target;
+      } catch (e) { /* leave the panel scroll as-is */ }
+    }
+
+    // Scroll a (usually new) group to the top and flash it — applied twice
+    // like restoreScroll, because right after a rebuild the list hasn't
+    // been measured yet and the first scroll can be clamped.
     function focusGroup(drawingName) {
-      ensureGroupVisible(drawingName);
+      scrollGroupToTop(drawingName);
       highlightGroup(drawingName);
       try {
         var t;
@@ -915,7 +933,7 @@ function SyncNote() {
         g_snKeepAlive.push(t);
         t.singleShot = true;
         t.timeout.connect(function () {
-          try { ensureGroupVisible(drawingName); } catch (e) {}
+          try { scrollGroupToTop(drawingName); } catch (e) {}
         });
         t.start(60);
       } catch (e) { /* immediate attempt above already did its best */ }
@@ -1152,12 +1170,20 @@ function SyncNote() {
         dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
-      // Right column: ✕ on top, done toggle beneath it, packed to the top.
+      // ✕ and toggle sit SIDE BY SIDE in the top-right corner: stacking
+      // them vertically forced every card to ~two button heights, bloating
+      // one-line notes (v0.17.0 user feedback). The spacer below pins the
+      // pair to the top when the note text wraps tall.
+      var btnRowW = new QWidget();
+      var btnRow = new QHBoxLayout(btnRowW);
+      btnRow.setContentsMargins(0, 0, 0, 0);
+      addW(btnRow, delBtn);
+      addW(btnRow, doneBtn);
+
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
-      addW(rightCol, delBtn);
-      addW(rightCol, doneBtn);
+      addW(rightCol, btnRowW);
       addW(rightCol, new QWidget(), 1);
       addW(h, rightColW);
 
