@@ -722,6 +722,7 @@ User repro: Add Note pressed by accident → empty group persists forever across
 - Removal = exposure only (via `removeSubstitutionCore`, the accum-free refactor of `removeSubstitution`), whole sweep one undo step, drawing files never deleted → a false positive costs one Ctrl+Z, never artwork.
 - Accepted edge (user informed): file size reflects the SAVED state — art drawn in a session where the scene never saved reads as empty at next launch and gets its exposure swept (file + art survive; re-expose to recover). Save-on-close makes this rare.
 - A fully swept scene has zero subs → next launch runs the v0.13.0 first-use starter again, by design.
+- **Confirmed working in live test (2026-07-03):** legacy strays (frames 16/21) swept on first launch; a freshly created empty sub swept on close/reopen; note-bearing subs untouched. The 1024-byte threshold held on Harmony 22 / Windows.
 
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
