@@ -739,6 +739,10 @@ Third attempt at editing, this time as a **text-system redesign** (user's instin
 
 New-territory risks: read-only QTextEdit as label (cosmetic), per-card QTextEdit count (perf, likely fine), `palette(text)` in a stylesheet, `setFocus()` binding. If beta proves out, merge to main as v0.24.0 and retire the label path.
 
+**v0.24.0-beta live test: THE REDESIGN WORKS** — unlock, type, Enter-save all confirmed by user ("blown away"). Two cosmetic fixes → v0.24.1-beta:
+1. `palette(text)` resolves **black** for QTextEdit on Harmony's dark theme (labels use a different palette role) — locked text is now explicit `#dcdcdc` (done: `#808080`). Gotcha ledger: don't trust `palette(…)` in stylesheets on themed apps.
+2. The editing look (green border + dark fill) clashed with the native add box — replaced with **no stylesheet at all**: native rendering = identical to the add box by construction (the v0.14.3 "match by not styling" lesson, second application).
+
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant

@@ -39,7 +39,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.24.0-beta";     // edit-in-place BETA (KB §29)
+  var SN_VERSION    = "0.24.1-beta";     // edit-in-place BETA (KB §29)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1533,19 +1533,20 @@ function SyncNoteBeta() {
 
     // The note box's three looks, all scoped to QTextEdit (unscoped sheets
     // cascade into tooltips — gotcha #6b):
-    //   locked        = quiet, label-like: transparent, borderless
-    //   locked + done = same but gray ("handled, no need to re-read")
-    //   editing       = visible input: green border, slight dark fill
+    //   locked        = quiet, label-like: transparent, borderless, light
+    //                   gray text (explicit — palette(text) resolves BLACK
+    //                   for QTextEdit on Harmony's dark theme, v0.24.1 fix)
+    //   locked + done = same but darker gray ("handled")
+    //   editing       = NO stylesheet at all → native rendering, identical
+    //                   to the add box by construction (v0.14.3 lesson)
     function styleNoteBox(box, done, editing) {
       try {
         if (editing) {
-          box.styleSheet =
-            "QTextEdit { background: rgba(0, 0, 0, 60); border: 1px solid " +
-            SN_GREEN + "; }";
+          box.styleSheet = "";
         } else {
           box.styleSheet =
             "QTextEdit { background: transparent; border: none; color: " +
-            (done ? "#808080" : "palette(text)") + "; }";
+            (done ? "#808080" : "#dcdcdc") + "; }";
         }
       } catch (e) { /* cosmetic only; the box still works */ }
     }
