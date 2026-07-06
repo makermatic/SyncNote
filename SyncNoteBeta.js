@@ -39,7 +39,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.24.2-beta";     // edit-in-place BETA (KB §29)
+  var SN_VERSION    = "0.24.3-beta";     // edit-in-place BETA (KB §29)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1533,11 +1533,11 @@ function SyncNoteBeta() {
 
     // The note box's three looks, all scoped to QTextEdit (unscoped sheets
     // cascade into tooltips — gotcha #6b):
-    //   locked        = quiet, label-like: transparent, borderless, text in
-    //                   palette(window-text) — the ROLE QLabel paints with,
-    //                   so it matches the old label color exactly. (The
-    //                   "text" role resolves black on the dark theme, and
-    //                   hardcoded #dcdcdc read too bright — v0.24.2.)
+    //   locked        = quiet, label-like: transparent, borderless, text
+    //                   #b1b1b1 (Harmony's label gray). Hardcoded on
+    //                   purpose: Harmony themes via an APP STYLESHEET, not
+    //                   QPalette, so every palette(...) lookup returns the
+    //                   unthemed default = BLACK (v0.24.1/2 failures).
     //   locked + done = same but darker gray ("handled")
     //   editing       = NO stylesheet at all → native rendering, identical
     //                   to the add box by construction (v0.14.3 lesson)
@@ -1548,7 +1548,7 @@ function SyncNoteBeta() {
         } else {
           box.styleSheet =
             "QTextEdit { background: transparent; border: none; color: " +
-            (done ? "#808080" : "palette(window-text)") + "; }";
+            (done ? "#808080" : "#b1b1b1") + "; }";
         }
       } catch (e) { /* cosmetic only; the box still works */ }
     }

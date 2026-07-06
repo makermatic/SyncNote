@@ -743,6 +743,8 @@ New-territory risks: read-only QTextEdit as label (cosmetic), per-card QTextEdit
 1. `palette(text)` resolves **black** for QTextEdit on Harmony's dark theme (labels use a different palette role) — locked text is now explicit `#dcdcdc` (done: `#808080`). Gotcha ledger: don't trust `palette(…)` in stylesheets on themed apps.
 2. The editing look (green border + dark fill) clashed with the native add box — replaced with **no stylesheet at all**: native rendering = identical to the add box by construction (the v0.14.3 "match by not styling" lesson, second application).
 
+**v0.24.2 → v0.24.3 (the palette saga, closed):** `palette(window-text)` ALSO rendered black. Root cause, now understood: **Harmony's dark theme is an application-wide Qt stylesheet, not a QPalette** — so every `palette(…)` lookup in a custom stylesheet resolves against the untouched factory palette (light theme, black text). Native-looking widgets get their colors from Harmony's own qss rules, which a custom `color:` declaration displaces. Consequence for the gotcha ledger (add to §7.3.5 instincts): **never use `palette(…)` in stylesheets inside Harmony; hardcode from Harmony's theme values.** Locked note text = `#b1b1b1` (Harmony's label gray).
+
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
