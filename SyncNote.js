@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.23.0";          // shown in title + status bar so we always know which build runs
+  var SN_VERSION    = "0.25.0";          // note editing (hybrid design) graduates to stable
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -994,6 +994,9 @@ function SyncNote() {
     var lastSignal = "";  // which notifier signal requested the last check
     var hlGroup = null;   // currently highlighted group card
     var hlTimer = null;   // clears the highlight after a moment
+    var editingNoteId = null; // note unlocked for in-place editing, or null
+    var editDraft = null;     // mid-edit text captured across rebuilds
+    var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -1013,6 +1016,16 @@ function SyncNote() {
       // adding a note deep in the list doesn't yank the view around.
       var savedScroll = 0;
       try { savedScroll = scroll.verticalScrollBar().value; } catch (e) {}
+
+      // Capture mid-edit text — ONLY from the box that actually is the
+      // editor. (The v0.21.1 failure: the stash captured from a box that
+      // was not yet the editor, saving emptiness as the "draft".)
+      try {
+        if (editingNoteId !== null && liveNoteBoxes[editingNoteId]) {
+          editDraft = String(liveNoteBoxes[editingNoteId].plainText);
+        }
+      } catch (e) { /* best-effort */ }
+      liveNoteBoxes = {};
 
       // Stash half-typed notes so an auto-refresh can't eat a draft.
       try {
@@ -1050,6 +1063,27 @@ function SyncNote() {
         restoreScroll(savedScroll);
       }
       updateScrubButtons();
+
+      // Note boxes measure against the wrong wrap width until the layout
+      // computes geometry (the tiny-scrollbox bug, understood since
+      // v0.21.1) — re-measure the whole batch once it has.
+      try {
+        var mt;
+        try { mt = new QTimer(dlg); }
+        catch (e0) { mt = new QTimer(); }
+        g_snKeepAlive.push(mt);
+        mt.singleShot = true;
+        mt.timeout.connect(function () {
+          try {
+            for (var nid in liveNoteBoxes) {
+              if (liveNoteBoxes.hasOwnProperty(nid)) {
+                sizeNoteInput(liveNoteBoxes[nid]); // matters only mid-edit
+              }
+            }
+          } catch (e) {}
+        });
+        mt.start(60);
+      } catch (e) { /* immediate sizing already happened per card */ }
     }
 
     // Align a group card's top with the viewport top, so its header and
@@ -1286,16 +1320,83 @@ function SyncNote() {
       if (frameNo > 0) meta.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
       addW(textCol, meta);
 
+      // ---- HYBRID text system (v0.25.0-beta): each card carries BOTH a
+      // real QLabel (display — pixel-identical to stable BY CONSTRUCTION,
+      // nothing to impersonate) and a native QTextEdit editor, hidden
+      // until ✎. Editing = a visibility flip: no rebuild, no layout
+      // surgery, no styling of native widgets, no pixel tuning.
+      var isEditingThis = (editingNoteId === note.id);
+
       var textLbl = new QLabel(note.text);
       textLbl.wordWrap = true;
       // Selectable + copyable (drag to select, Ctrl+C / right-click Copy).
-      // Because the label now accepts mouse events, clicks on the text do
-      // NOT bubble to the card's jump filter — selection stays safe.
       try { textLbl.textInteractionFlags = Qt.TextSelectableByMouse; }
       catch (e) { /* engine refused the flag; text stays non-selectable */ }
-      dimNoteText(textLbl, note.done === true); // done notes start dimmed
+      dimNoteText(textLbl, note.done === true);
       addW(textCol, textLbl);
+
+      var box = new QTextEdit(); // native = identical to the add box
+      box.plainText = (isEditingThis && editDraft !== null)
+        ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
+      sizeNoteInput(box);
+      liveNoteBoxes[note.id] = box;
+      addW(textCol, box);
+
+      // Exactly one of the pair is ever visible.
+      if (isEditingThis) { try { textLbl.hide(); } catch (e) {} }
+      else { try { box.hide(); } catch (e) {} }
+
+      // Pack meta + text to the TOP: when the button column is taller than
+      // the text, the text column otherwise centers in the leftover space
+      // (inconsistent line starts across cards — v0.25.1 fix).
+      addW(textCol, new QWidget(), 1);
       addW(h, textColW, 1);
+
+      // Flip back to the label, saving or discarding. Programmatic text
+      // resets re-trigger textChanged, so state is cleared FIRST and the
+      // handler ignores non-editing events.
+      var finishEdit = function (saveIt) {
+        if (editingNoteId !== note.id) return;
+        var txt = "";
+        try { txt = String(box.plainText); } catch (e) {}
+        txt = txt.replace(/^\s+|\s+$/g, "");
+        editingNoteId = null;
+        editDraft = null;
+        if (saveIt && txt !== "" && txt !== String(note.text)) {
+          note.text = txt;
+          saveModel(model);
+          trace("edit saved (note " + note.id + ")");
+        } else {
+          trace("edit closed without changes (note " + note.id + ")");
+        }
+        try { textLbl.text = String(note.text); } catch (e) {}
+        try { box.plainText = String(note.text); } catch (e) {}
+        try { box.hide(); } catch (e) {}
+        try { textLbl.show(); } catch (e) {}
+        try { editBtn.toolTip = "Edit note"; } catch (e) {}
+      };
+
+      // Same Enter machinery as the add box: Enter = save, Shift+Enter =
+      // newline. The filter also fires on a focused read-only box, but
+      // finishEdit no-ops unless this note is the one being edited.
+      var editKeyFilter = makeEnterFilter(function () { finishEdit(true); });
+      if (editKeyFilter) {
+        try { box.installEventFilter(editKeyFilter); } catch (e) {}
+      }
+      box.textChanged.connect(function () {
+        if (editingNoteId !== note.id) return; // programmatic reset / locked
+        sizeNoteInput(box); // auto-grow while typing
+        try {
+          var t = String(box.plainText);
+          if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
+            var shiftHeld = false;
+            try {
+              shiftHeld = (QApplication.keyboardModifiers() & Qt.ShiftModifier) != 0;
+            } catch (e) { /* treat Enter as save */ }
+            if (!shiftHeld) finishEdit(true);
+          }
+        } catch (e) { /* typing must never break */ }
+      });
 
       var delBtn = new QPushButton("✕");
       delBtn.toolTip = "Delete note";
@@ -1304,15 +1405,43 @@ function SyncNote() {
       // click-resize bug) — locking min=max makes restyles size-neutral.
       delBtn.minimumWidth = 28;
       delBtn.maximumWidth = 28;
-      delBtn.minimumHeight = 20; // shorter (v0.20.0): vertical stack costs
-      delBtn.maximumHeight = 20; // ~44px instead of the old ~55px
+      delBtn.minimumHeight = 20; // comfortable size restored (v0.25.1): the
+      delBtn.maximumHeight = 20; // hybrid's cards no longer need slim buttons
       delBtn.clicked.connect((function (nid, dn) {
         return function () {
+          if (editingNoteId === nid) { editingNoteId = null; editDraft = null; }
           deleteNote(model, layer.elementId, dn, nid);
           saveModel(model);
           refresh();
         };
       })(note.id, drawingName));
+
+      // ✎ between ✕ and ○: unlocks THIS box in place; clicking again
+      // cancels. One note at a time; Esc is deliberately not a cancel key
+      // (it closes the whole panel).
+      var editBtn = new QPushButton("✎");
+      editBtn.toolTip = isEditingThis ? "Cancel editing" : "Edit note";
+      editBtn.minimumWidth = 28;
+      editBtn.maximumWidth = 28;
+      editBtn.minimumHeight = 20;
+      editBtn.maximumHeight = 20;
+      editBtn.clicked.connect(function () {
+        if (editingNoteId === note.id) { finishEdit(false); return; } // cancel
+        if (editingNoteId !== null) {
+          trace("edit ignored — another note is being edited");
+          return;
+        }
+        editingNoteId = note.id;
+        editDraft = null;
+        try { box.plainText = String(note.text); } catch (e) {}
+        try { textLbl.hide(); } catch (e) {}
+        try { box.show(); } catch (e) {}
+        sizeNoteInput(box); // measured while shown: layout width is real
+        try { box.setFocus(); }
+        catch (e0) { try { box.setFocus(7); } catch (e1) {} } // 7 = OtherFocusReason
+        try { editBtn.toolTip = "Cancel editing"; } catch (e) {}
+        trace("editing note " + note.id + " in place");
+      });
 
       // Done toggle, right under the ✕ — a NATIVE button just like it, so
       // shape, size, and hover thickness match by construction (custom
@@ -1333,14 +1462,13 @@ function SyncNote() {
         dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
-      // ✕ over ✓, vertical again (v0.20.0 user choice) — but with SHORTER
-      // buttons (28×20) so the stack costs ~44px instead of the ~55px that
-      // bloated one-line cards back in v0.17.0. Spacer pins the pair top.
+      // ✕ / ✎ / ○ stacked vertically at 28×20 each; spacer pins them top.
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
       rightCol.setSpacing(4);
       addW(rightCol, delBtn);
+      addW(rightCol, editBtn);
       addW(rightCol, doneBtn);
       addW(rightCol, new QWidget(), 1);
       addW(h, rightColW);
@@ -1420,15 +1548,20 @@ function SyncNote() {
     }
 
     // Done notes read grayed-out — signals "handled, no need to re-read".
-    // Restyled in place alongside the toggle; rebuilds re-apply from model.
+    // (The hybrid design retired styleNoteBox: display is a real QLabel,
+    // the editor is a fully native QTextEdit — nothing to impersonate.)
     function dimNoteText(lbl, done) {
       try { lbl.styleSheet = done ? "color: #808080;" : ""; } catch (e) {}
     }
 
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
     // Falls back to a fixed 2-line height if document metrics aren't bound.
-    function sizeNoteInput(edit) {
-      var h = 44;
+    // Optional minH: the ADD box keeps the 44px two-line floor; locked
+    // note DISPLAY boxes pass 24 so one-liners don't carry empty slack
+    // (v0.24.4 — the "extra padding" was mostly this inherited floor).
+    function sizeNoteInput(edit, minH) {
+      var floorH = (minH === undefined) ? 44 : minH;
+      var h = floorH;
       try {
         var doc = null;
         try { doc = edit.document(); } catch (e0) { doc = edit.document; }
@@ -1436,7 +1569,7 @@ function SyncNote() {
         var dh = (typeof s.height === "function") ? s.height() : s.height;
         if (dh && dh > 0) h = Math.ceil(dh) + 12;
       } catch (e) { /* keep fallback height */ }
-      if (h < 44) h = 44;
+      if (h < floorH) h = floorH;
       if (h > 160) h = 160; // ~8 lines, then the box scrolls internally
       edit.minimumHeight = h;
       edit.maximumHeight = h;
@@ -1512,6 +1645,13 @@ function SyncNote() {
           staleTimer.singleShot = true;
           staleTimer.timeout.connect(function () {
             try {
+              if (editingNoteId !== null) {
+                // Never rebuild under someone's cursor mid-edit; check
+                // again shortly — it catches up after save/cancel.
+                trace("auto-refresh deferred (a note is being edited)");
+                scheduleStalenessCheck();
+                return;
+              }
               if (groupsSignature() !== shownSig) {
                 trace("timeline changed under the panel (via " + lastSignal +
                       ") — auto-refreshing");
