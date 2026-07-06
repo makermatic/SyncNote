@@ -1079,7 +1079,7 @@ function SyncNoteBeta() {
           try {
             for (var nid in liveNoteBoxes) {
               if (liveNoteBoxes.hasOwnProperty(nid)) {
-                sizeNoteInput(liveNoteBoxes[nid], 24);
+                sizeNoteInput(liveNoteBoxes[nid]); // matters only mid-edit
               }
             }
           } catch (e) {}
@@ -1322,25 +1322,34 @@ function SyncNoteBeta() {
       if (frameNo > 0) meta.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
       addW(textCol, meta);
 
-      // ---- BETA text system: the note text ALWAYS lives in a QTextEdit,
-      // locked (readOnly) and styled like a quiet label. Editing = unlock
-      // this very widget in place — no rebuild, no prefill, no scroll
-      // moves, nothing to desync (the failure mode of both v0.21.x tries).
-      // Selection/copy works natively on a read-only QTextEdit.
+      // ---- HYBRID text system (v0.25.0-beta): each card carries BOTH a
+      // real QLabel (display — pixel-identical to stable BY CONSTRUCTION,
+      // nothing to impersonate) and a native QTextEdit editor, hidden
+      // until ✎. Editing = a visibility flip: no rebuild, no layout
+      // surgery, no styling of native widgets, no pixel tuning.
       var isEditingThis = (editingNoteId === note.id);
-      var box = new QTextEdit();
+
+      var textLbl = new QLabel(note.text);
+      textLbl.wordWrap = true;
+      // Selectable + copyable (drag to select, Ctrl+C / right-click Copy).
+      try { textLbl.textInteractionFlags = Qt.TextSelectableByMouse; }
+      catch (e) { /* engine refused the flag; text stays non-selectable */ }
+      dimNoteText(textLbl, note.done === true);
+      addW(textCol, textLbl);
+
+      var box = new QTextEdit(); // native = identical to the add box
       box.plainText = (isEditingThis && editDraft !== null)
         ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
-      try { box.readOnly = !isEditingThis; } catch (e) {}
-      try { box.document().documentMargin = 2; } // labels have no inner padding;
-      catch (e) {}                               // shrink ours toward that look
-      styleNoteBox(box, note.done === true, isEditingThis);
-      sizeNoteInput(box, 24);
+      sizeNoteInput(box);
       liveNoteBoxes[note.id] = box;
       addW(textCol, box);
+
+      // Exactly one of the pair is ever visible.
+      if (isEditingThis) { try { textLbl.hide(); } catch (e) {} }
+      else { try { box.hide(); } catch (e) {} }
       addW(h, textColW, 1);
 
-      // Lock the box back down, saving or discarding. Programmatic text
+      // Flip back to the label, saving or discarding. Programmatic text
       // resets re-trigger textChanged, so state is cleared FIRST and the
       // handler ignores non-editing events.
       var finishEdit = function (saveIt) {
@@ -1357,10 +1366,10 @@ function SyncNoteBeta() {
         } else {
           trace("edit closed without changes (note " + note.id + ")");
         }
+        try { textLbl.text = String(note.text); } catch (e) {}
         try { box.plainText = String(note.text); } catch (e) {}
-        try { box.readOnly = true; } catch (e) {}
-        styleNoteBox(box, note.done === true, false);
-        sizeNoteInput(box, 24);
+        try { box.hide(); } catch (e) {}
+        try { textLbl.show(); } catch (e) {}
         try { editBtn.toolTip = "Edit note"; } catch (e) {}
       };
 
@@ -1373,7 +1382,7 @@ function SyncNoteBeta() {
       }
       box.textChanged.connect(function () {
         if (editingNoteId !== note.id) return; // programmatic reset / locked
-        sizeNoteInput(box, 24); // auto-grow while typing
+        sizeNoteInput(box); // auto-grow while typing
         try {
           var t = String(box.plainText);
           if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
@@ -1421,8 +1430,10 @@ function SyncNoteBeta() {
         }
         editingNoteId = note.id;
         editDraft = null;
-        try { box.readOnly = false; } catch (e) {}
-        styleNoteBox(box, note.done === true, true);
+        try { box.plainText = String(note.text); } catch (e) {}
+        try { textLbl.hide(); } catch (e) {}
+        try { box.show(); } catch (e) {}
+        sizeNoteInput(box); // measured while shown: layout width is real
         try { box.setFocus(); }
         catch (e0) { try { box.setFocus(7); } catch (e1) {} } // 7 = OtherFocusReason
         try { editBtn.toolTip = "Cancel editing"; } catch (e) {}
@@ -1445,7 +1456,7 @@ function SyncNoteBeta() {
         note.done = (note.done !== true); // missing field counts as unchecked
         saveModel(model);
         styleDoneToggle(doneBtn, note.done);
-        styleNoteBox(box, note.done, editingNoteId === note.id); // dim/undim
+        dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
       // ✕ / ✎ / ○ stacked vertically at 28×20 each; spacer pins them top.
@@ -1533,26 +1544,11 @@ function SyncNoteBeta() {
       }
     }
 
-    // The note box's three looks, all scoped to QTextEdit (unscoped sheets
-    // cascade into tooltips — gotcha #6b):
-    //   locked        = quiet, label-like: transparent, borderless, text
-    //                   #b1b1b1 (Harmony's label gray). Hardcoded on
-    //                   purpose: Harmony themes via an APP STYLESHEET, not
-    //                   QPalette, so every palette(...) lookup returns the
-    //                   unthemed default = BLACK (v0.24.1/2 failures).
-    //   locked + done = same but darker gray ("handled")
-    //   editing       = NO stylesheet at all → native rendering, identical
-    //                   to the add box by construction (v0.14.3 lesson)
-    function styleNoteBox(box, done, editing) {
-      try {
-        if (editing) {
-          box.styleSheet = "";
-        } else {
-          box.styleSheet =
-            "QTextEdit { background: transparent; border: none; color: " +
-            (done ? "#808080" : "#b1b1b1") + "; }";
-        }
-      } catch (e) { /* cosmetic only; the box still works */ }
+    // Done notes read grayed-out — signals "handled, no need to re-read".
+    // (The hybrid design retired styleNoteBox: display is a real QLabel,
+    // the editor is a fully native QTextEdit — nothing to impersonate.)
+    function dimNoteText(lbl, done) {
+      try { lbl.styleSheet = done ? "color: #808080;" : ""; } catch (e) {}
     }
 
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
