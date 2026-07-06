@@ -39,7 +39,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.24.4-beta";     // edit-in-place BETA (KB §29)
+  var SN_VERSION    = "0.25.1-beta";     // edit-in-place BETA, hybrid design (KB §29)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1347,6 +1347,11 @@ function SyncNoteBeta() {
       // Exactly one of the pair is ever visible.
       if (isEditingThis) { try { textLbl.hide(); } catch (e) {} }
       else { try { box.hide(); } catch (e) {} }
+
+      // Pack meta + text to the TOP: when the button column is taller than
+      // the text, the text column otherwise centers in the leftover space
+      // (inconsistent line starts across cards — v0.25.1 fix).
+      addW(textCol, new QWidget(), 1);
       addW(h, textColW, 1);
 
       // Flip back to the label, saving or discarding. Programmatic text
@@ -1402,8 +1407,8 @@ function SyncNoteBeta() {
       // click-resize bug) — locking min=max makes restyles size-neutral.
       delBtn.minimumWidth = 28;
       delBtn.maximumWidth = 28;
-      delBtn.minimumHeight = 18; // slimmer (v0.24.4): three stacked buttons
-      delBtn.maximumHeight = 18; // must not prop short cards open
+      delBtn.minimumHeight = 20; // comfortable size restored (v0.25.1): the
+      delBtn.maximumHeight = 20; // hybrid's cards no longer need slim buttons
       delBtn.clicked.connect((function (nid, dn) {
         return function () {
           if (editingNoteId === nid) { editingNoteId = null; editDraft = null; }
@@ -1420,8 +1425,8 @@ function SyncNoteBeta() {
       editBtn.toolTip = isEditingThis ? "Cancel editing" : "Edit note";
       editBtn.minimumWidth = 28;
       editBtn.maximumWidth = 28;
-      editBtn.minimumHeight = 18;
-      editBtn.maximumHeight = 18;
+      editBtn.minimumHeight = 20;
+      editBtn.maximumHeight = 20;
       editBtn.clicked.connect(function () {
         if (editingNoteId === note.id) { finishEdit(false); return; } // cancel
         if (editingNoteId !== null) {
@@ -1449,8 +1454,8 @@ function SyncNoteBeta() {
       var doneBtn = new QPushButton("");
       doneBtn.minimumWidth = 28; // identical fixed geometry to the ✕ above
       doneBtn.maximumWidth = 28;
-      doneBtn.minimumHeight = 18;
-      doneBtn.maximumHeight = 18;
+      doneBtn.minimumHeight = 20;
+      doneBtn.maximumHeight = 20;
       styleDoneToggle(doneBtn, note.done === true);
       doneBtn.clicked.connect(function () {
         note.done = (note.done !== true); // missing field counts as unchecked
@@ -1463,7 +1468,7 @@ function SyncNoteBeta() {
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
-      rightCol.setSpacing(2);
+      rightCol.setSpacing(4);
       addW(rightCol, delBtn);
       addW(rightCol, editBtn);
       addW(rightCol, doneBtn);
