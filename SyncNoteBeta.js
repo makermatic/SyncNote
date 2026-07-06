@@ -39,7 +39,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.24.3-beta";     // edit-in-place BETA (KB §29)
+  var SN_VERSION    = "0.24.4-beta";     // edit-in-place BETA (KB §29)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1079,7 +1079,7 @@ function SyncNoteBeta() {
           try {
             for (var nid in liveNoteBoxes) {
               if (liveNoteBoxes.hasOwnProperty(nid)) {
-                sizeNoteInput(liveNoteBoxes[nid]);
+                sizeNoteInput(liveNoteBoxes[nid], 24);
               }
             }
           } catch (e) {}
@@ -1332,8 +1332,10 @@ function SyncNoteBeta() {
       box.plainText = (isEditingThis && editDraft !== null)
         ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
       try { box.readOnly = !isEditingThis; } catch (e) {}
+      try { box.document().documentMargin = 2; } // labels have no inner padding;
+      catch (e) {}                               // shrink ours toward that look
       styleNoteBox(box, note.done === true, isEditingThis);
-      sizeNoteInput(box);
+      sizeNoteInput(box, 24);
       liveNoteBoxes[note.id] = box;
       addW(textCol, box);
       addW(h, textColW, 1);
@@ -1358,7 +1360,7 @@ function SyncNoteBeta() {
         try { box.plainText = String(note.text); } catch (e) {}
         try { box.readOnly = true; } catch (e) {}
         styleNoteBox(box, note.done === true, false);
-        sizeNoteInput(box);
+        sizeNoteInput(box, 24);
         try { editBtn.toolTip = "Edit note"; } catch (e) {}
       };
 
@@ -1371,7 +1373,7 @@ function SyncNoteBeta() {
       }
       box.textChanged.connect(function () {
         if (editingNoteId !== note.id) return; // programmatic reset / locked
-        sizeNoteInput(box); // auto-grow while typing
+        sizeNoteInput(box, 24); // auto-grow while typing
         try {
           var t = String(box.plainText);
           if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
@@ -1391,8 +1393,8 @@ function SyncNoteBeta() {
       // click-resize bug) — locking min=max makes restyles size-neutral.
       delBtn.minimumWidth = 28;
       delBtn.maximumWidth = 28;
-      delBtn.minimumHeight = 20; // shorter (v0.20.0): vertical stack costs
-      delBtn.maximumHeight = 20; // ~44px instead of the old ~55px
+      delBtn.minimumHeight = 18; // slimmer (v0.24.4): three stacked buttons
+      delBtn.maximumHeight = 18; // must not prop short cards open
       delBtn.clicked.connect((function (nid, dn) {
         return function () {
           if (editingNoteId === nid) { editingNoteId = null; editDraft = null; }
@@ -1409,8 +1411,8 @@ function SyncNoteBeta() {
       editBtn.toolTip = isEditingThis ? "Cancel editing" : "Edit note";
       editBtn.minimumWidth = 28;
       editBtn.maximumWidth = 28;
-      editBtn.minimumHeight = 20;
-      editBtn.maximumHeight = 20;
+      editBtn.minimumHeight = 18;
+      editBtn.maximumHeight = 18;
       editBtn.clicked.connect(function () {
         if (editingNoteId === note.id) { finishEdit(false); return; } // cancel
         if (editingNoteId !== null) {
@@ -1436,8 +1438,8 @@ function SyncNoteBeta() {
       var doneBtn = new QPushButton("");
       doneBtn.minimumWidth = 28; // identical fixed geometry to the ✕ above
       doneBtn.maximumWidth = 28;
-      doneBtn.minimumHeight = 20;
-      doneBtn.maximumHeight = 20;
+      doneBtn.minimumHeight = 18;
+      doneBtn.maximumHeight = 18;
       styleDoneToggle(doneBtn, note.done === true);
       doneBtn.clicked.connect(function () {
         note.done = (note.done !== true); // missing field counts as unchecked
@@ -1450,7 +1452,7 @@ function SyncNoteBeta() {
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
-      rightCol.setSpacing(4);
+      rightCol.setSpacing(2);
       addW(rightCol, delBtn);
       addW(rightCol, editBtn);
       addW(rightCol, doneBtn);
@@ -1555,8 +1557,12 @@ function SyncNoteBeta() {
 
     // Multiline note box sizing: wrap + grow with content (cap, then scroll).
     // Falls back to a fixed 2-line height if document metrics aren't bound.
-    function sizeNoteInput(edit) {
-      var h = 44;
+    // Optional minH: the ADD box keeps the 44px two-line floor; locked
+    // note DISPLAY boxes pass 24 so one-liners don't carry empty slack
+    // (v0.24.4 — the "extra padding" was mostly this inherited floor).
+    function sizeNoteInput(edit, minH) {
+      var floorH = (minH === undefined) ? 44 : minH;
+      var h = floorH;
       try {
         var doc = null;
         try { doc = edit.document(); } catch (e0) { doc = edit.document; }
@@ -1564,7 +1570,7 @@ function SyncNoteBeta() {
         var dh = (typeof s.height === "function") ? s.height() : s.height;
         if (dh && dh > 0) h = Math.ceil(dh) + 12;
       } catch (e) { /* keep fallback height */ }
-      if (h < 44) h = 44;
+      if (h < floorH) h = floorH;
       if (h > 160) h = 160; // ~8 lines, then the box scrolls internally
       edit.minimumHeight = h;
       edit.maximumHeight = h;
