@@ -724,6 +724,21 @@ User repro: Add Note pressed by accident → empty group persists forever across
 - A fully swept scene has zero subs → next launch runs the v0.13.0 first-use starter again, by design.
 - **Confirmed working in live test (2026-07-03):** legacy strays (frames 16/21) swept on first launch; a freshly created empty sub swept on close/reopen; note-bearing subs untouched. The 1024-byte threshold held on Harmony 22 / Windows.
 
+## 29. Implementation log — v0.24.0-beta (edit-in-place, branch `beta/edit-in-place`)
+
+Third attempt at editing, this time as a **text-system redesign** (user's instinct) on a **separate branch + separate script** (`SyncNoteBeta.js`, toolbar function `SyncNoteBeta`) so stable `main` is untouched. Both scripts share the scene's notes data and panel objectName (opening one closes the other).
+
+**Root cause of the v0.21.1 "nothing happens" found first** (desk-check per §27's brief): the pencil set edit state then refreshed — but refresh's draft-stash ran before the editor ever rendered, captured the still-empty add box as the "edit draft" (`""` ≠ `null`), and the editor faithfully displayed that nothing. Both reported symptoms were this one bug. Lesson: **a stash must only capture from a widget that already IS what the stash assumes it is.**
+
+**The redesign** eliminates the whole mode-rebuild category instead of patching it:
+- Note text always lives in a **read-only QTextEdit** styled as a quiet label (`styleNoteBox`: transparent/borderless; gray when done; green border + dark fill while editing — all scoped selectors per gotcha #6b). Selection/copy native. `dimNoteText` removed.
+- **✎ unlocks the box in place** (readOnly=false + restyle + focus): no rebuild, no prefill, no scroll movement. ✎ again = cancel; Enter = save (same `makeEnterFilter` + trailing-`\n` fallback, which no-ops unless this note is the active edit); empty save = no change. One note editable at a time.
+- **Auto-refresh defers while editing** (staleness tick reschedules itself), and as the belt to that suspender, refresh stashes mid-edit text **only from `liveNoteBoxes[editingNoteId]`** and rebuilds that card unlocked with the draft.
+- All boxes batch re-measured 60 ms post-rebuild (the tiny-scrollbox fix at build scale).
+- Every state transition traced (`editing note n_… in place`, `edit saved`, `auto-refresh deferred`) — instrument-first, per the brief.
+
+New-territory risks: read-only QTextEdit as label (cosmetic), per-card QTextEdit count (perf, likely fine), `palette(text)` in a stylesheet, `setFocus()` binding. If beta proves out, merge to main as v0.24.0 and retire the label path.
+
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
