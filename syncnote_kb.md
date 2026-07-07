@@ -758,7 +758,15 @@ Group headers now show the sub's full exposure span: **`Frame 42 - 43`** (single
 - Copy All digest uses the same range format.
 - Defined edge: non-contiguous exposure shows the full first-to-last span (user-accepted).
 
-Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
+## 31. Implementation log — v0.27.0-beta (marker rendering, branch `beta/markdown-markers`)
+
+The bold/italic idea, built as the **display-marker tier** (chosen over full rich text after the assessment in §30-era discussion: rich text = data-format migration with a long correctness tail; markers = display-only, storage untouched). Separate beta script + branch again, per user, for side-by-side comparison with stable.
+
+- `renderNoteHtml(text)`: escape `& < >` → `**x**`→`<b>` (before `*x*`→`<i>` — order matters) → `\n`→`<br>` → wrap in `<span>`. The wrapper forces QLabel's rich-text path even for notes with entities but no tags ("&amp;" would otherwise display literally — subtle auto-detect trap).
+- Applied at the two display sites only (label build + post-edit update). The **editor shows raw markers** (plain-text editing, no WYSIWYG), **storage stays plain text** (old notes untouched, no escaping debt in the model), **Copy All unchanged** — pasted into Slack, `**bold**`/`*italic*` render natively there. Underline: no standard marker, deliberately not offered.
+- Known caveats for the beta pass: rich mode collapses runs of multiple spaces in notes; stray unpaired `*` stays literal (regex requires a closing pair). Notes written with markers show them literally in the STABLE build — harmless, and actually useful for the comparison.
+
+Future idea parked by user (explicitly not now): bold/italic in notes. → *Superseded: marker tier in beta as of 2026-07-07 (§31).* Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
