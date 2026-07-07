@@ -33,11 +33,18 @@ var g_snKeepAlivePanel = []; // panel-lifetime objects (SceneChangeNotifier,
 var g_snNotesDirty = false;  // notes changed since the scene was last saved —
                              // module-level so it survives panel relaunches
 
+// Title-bar window icon, embedded as base64 PNG so the script is a single
+// self-contained file (no separate SyncNote.png required). Injected from
+// _icon/_exports/Icon.png. If the decode bindings misbehave on some build,
+// buildDialog falls back to a SyncNote.png on disk, then to Harmony's
+// default icon — the icon is always purely cosmetic.
+var SN_ICON_B64 = "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";
+
 function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.27.4";          // reverts v0.27.1-.3 padding experiments to v0.27.0 layout
+  var SN_VERSION    = "0.28.1";          // embedded window icon + mid-line Enter-save fix
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -939,6 +946,35 @@ function SyncNote() {
     dlg.minimumWidth = 380;
     dlg.minimumHeight = 520;
 
+    // Custom title-bar icon (v0.28.0). Primary: decode the embedded base64
+    // PNG (self-contained — no external file). Fallback: a SyncNote.png on
+    // disk beside the script. Either failing just leaves Harmony's default
+    // icon — purely cosmetic.
+    try {
+      var icon = null;
+
+      // 1) embedded base64 → QPixmap → QIcon
+      try {
+        if (SN_ICON_B64 && SN_ICON_B64.charAt(0) !== "_") { // not the placeholder
+          var raw = new QByteArray(SN_ICON_B64);
+          var bin = QByteArray.fromBase64(raw);
+          var pix = new QPixmap();
+          if (pix.loadFromData(bin) && !pix.isNull()) icon = new QIcon(pix);
+        }
+      } catch (eEmbed) { trace("embedded icon decode failed (" + eEmbed + ")"); }
+
+      // 2) fallback: SyncNote.png in the scripts folder
+      if (!icon) {
+        try {
+          var iconPath = String(specialFolders.userScripts) + "/SyncNote.png";
+          if (new QFileInfo(iconPath).exists()) icon = new QIcon(iconPath);
+        } catch (eFile) {}
+      }
+
+      if (icon) dlg.setWindowIcon(icon);
+      else trace("no window icon available; using Harmony default");
+    } catch (e) { trace("could not set window icon (" + e + ")"); }
+
     var outer = new QVBoxLayout(dlg);
 
     // ---- toolbar row (container widget; see Qt-binding rule above) ----
@@ -1276,9 +1312,14 @@ function SyncNote() {
       addW(addRow, noteBtn);
       addW(v, addRowW);
 
-      function commit() {
-        var txt = "";
-        try { txt = String(input.plainText); } catch (e) {}
+      // explicitText (optional): the text to save, bypassing input.plainText
+      // — used by the textChanged path to save the text as it was BEFORE the
+      // stray Enter newline was inserted.
+      function commit(explicitText) {
+        var txt = (explicitText !== undefined) ? explicitText : "";
+        if (explicitText === undefined) {
+          try { txt = String(input.plainText); } catch (e) {}
+        }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
         addNote(model, layer.elementId, drawingName, txt);
@@ -1289,28 +1330,25 @@ function SyncNote() {
         delete drafts[drawingName];
         refresh();
       }
-      noteBtn.clicked.connect(commit);
+      noteBtn.clicked.connect(function () { commit(); });
 
       // Enter handling, primary path: event filter (consumes the key).
-      var filter = makeEnterFilter(commit);
+      var filter = makeEnterFilter(function () { commit(); });
       if (filter) {
         try { input.installEventFilter(filter); } catch (e) { filter = null; }
       }
 
       // Enter handling, fallback path + auto-grow: if the filter is inert,
-      // a plain Enter lands as a trailing newline in the text — detect it,
-      // check Shift via the live keyboard state, and submit.
+      // the Enter lands as a newline in the text. Detect a single un-shifted
+      // Enter anywhere (not just the end) and commit the pre-newline text.
+      var prevAddText = "";
+      try { prevAddText = String(input.plainText); } catch (e) {}
       input.textChanged.connect(function () {
         sizeNoteInput(input);
         try {
           var t = String(input.plainText);
-          if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
-            var shiftHeld = false;
-            try {
-              shiftHeld = (QApplication.keyboardModifiers() & Qt.ShiftModifier) != 0;
-            } catch (e) { /* can't read modifiers; treat Enter as submit */ }
-            if (!shiftHeld) commit(); // commit trims the trailing newline
-          }
+          if (isEnterKeypress(prevAddText, t)) { commit(prevAddText); return; }
+          prevAddText = t;
         } catch (e) { /* typing must never break */ }
       });
 
@@ -1380,10 +1418,12 @@ function SyncNote() {
       // Flip back to the label, saving or discarding. Programmatic text
       // resets re-trigger textChanged, so state is cleared FIRST and the
       // handler ignores non-editing events.
-      var finishEdit = function (saveIt) {
+      var finishEdit = function (saveIt, explicitText) {
         if (editingNoteId !== note.id) return;
-        var txt = "";
-        try { txt = String(box.plainText); } catch (e) {}
+        var txt = (explicitText !== undefined) ? explicitText : "";
+        if (explicitText === undefined) {
+          try { txt = String(box.plainText); } catch (e) {}
+        }
         txt = txt.replace(/^\s+|\s+$/g, "");
         editingNoteId = null;
         editDraft = null;
@@ -1408,18 +1448,25 @@ function SyncNote() {
       if (editKeyFilter) {
         try { box.installEventFilter(editKeyFilter); } catch (e) {}
       }
+      // Position-independent Enter detection (v0.28.1): compare to the
+      // previous text so a mid-line Enter saves too. prevEditText tracks
+      // the box content; programmatic sets (show/finishEdit) change it by
+      // more than one char, so they never look like an Enter keypress.
+      var prevEditText = "";
+      try { prevEditText = String(box.plainText); } catch (e) {}
       box.textChanged.connect(function () {
-        if (editingNoteId !== note.id) return; // programmatic reset / locked
+        if (editingNoteId !== note.id) {          // programmatic reset / locked
+          try { prevEditText = String(box.plainText); } catch (e) {}
+          return;
+        }
         sizeNoteInput(box); // auto-grow while typing
         try {
           var t = String(box.plainText);
-          if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
-            var shiftHeld = false;
-            try {
-              shiftHeld = (QApplication.keyboardModifiers() & Qt.ShiftModifier) != 0;
-            } catch (e) { /* treat Enter as save */ }
-            if (!shiftHeld) finishEdit(true);
+          if (isEnterKeypress(prevEditText, t)) {
+            finishEdit(true, prevEditText); // save text as it was pre-newline
+            return;
           }
+          prevEditText = t;
         } catch (e) { /* typing must never break */ }
       });
 
@@ -1619,6 +1666,28 @@ function SyncNote() {
     // Event filter so Enter submits and Shift+Enter inserts a newline.
     // Returns null if this engine can't build QObject-based filters — the
     // textChanged fallback in makeGroupWidget covers that case.
+    // True when the change from `prev` to `now` is a single un-shifted
+    // Enter keypress inserted ANYWHERE — not just at the end. The old
+    // trailing-"\n" check only caught Enter at the end of the text, so
+    // editing a note mid-line and pressing Enter inserted a newline
+    // instead of saving (v0.28.1). A lone Enter adds exactly one char
+    // (\n); pastes and normal typing don't match and fall through to a
+    // real newline. Reading modifiers at textChanged time is reliable in
+    // this build (the add box has relied on it since v0.24).
+    function countNewlines(s) {
+      var n = 0;
+      for (var i = 0; i < s.length; i++) if (s.charAt(i) === "\n") n++;
+      return n;
+    }
+    function isEnterKeypress(prev, now) {
+      if (now.length !== prev.length + 1) return false;
+      if (countNewlines(now) !== countNewlines(prev) + 1) return false;
+      try {
+        if (QApplication.keyboardModifiers() & Qt.ShiftModifier) return false;
+      } catch (e) { /* can't read shift → treat as Enter-save */ }
+      return true;
+    }
+
     function makeEnterFilter(commitFn) {
       try {
         var f = new QObject(dlg);

@@ -1,4 +1,5 @@
-# install.ps1 — copy SyncNote.js into every Toon Boom Harmony user-scripts folder.
+# install.ps1 — copy SyncNote.js (+ its window icon) into every Toon Boom
+# Harmony user-scripts folder.
 #
 # Run manually:   powershell -ExecutionPolicy Bypass -File install.ps1
 # Also run automatically by a Claude Code hook whenever SyncNote.js is updated.
@@ -16,6 +17,11 @@ if (-not (Test-Path $source)) {
     exit 1
 }
 
+# The dialog's title-bar icon. Installed next to the script as SyncNote.png,
+# which the script loads via specialFolders.userScripts. Optional — absent =
+# Harmony's default window icon.
+$iconSource = Join-Path $PSScriptRoot "_icon\_exports\Icon.png"
+
 # All Harmony (not Storyboard Pro) script folders, e.g. ...\Toon Boom Harmony Premium\2200-scripts
 $targets = Get-ChildItem "$env:APPDATA\Toon Boom Animation\Toon Boom Harmony*\*-scripts" -Directory -ErrorAction SilentlyContinue
 
@@ -27,4 +33,8 @@ if (-not $targets) {
 foreach ($dir in $targets) {
     Copy-Item $source -Destination $dir.FullName -Force
     Write-Output "Installed SyncNote.js -> $($dir.FullName)"
+    if (Test-Path $iconSource) {
+        Copy-Item $iconSource -Destination (Join-Path $dir.FullName "SyncNote.png") -Force
+        Write-Output "Installed SyncNote.png -> $($dir.FullName)"
+    }
 }
