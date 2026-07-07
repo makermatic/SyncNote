@@ -758,7 +758,9 @@ Group headers now show the sub's full exposure span: **`Frame 42 - 43`** (single
 - Copy All digest uses the same range format.
 - Defined edge: non-contiguous exposure shows the full first-to-last span (user-accepted).
 
-## 31. Implementation log — v0.27.0-beta (marker rendering, branch `beta/markdown-markers`)
+## 31. Implementation log — v0.27.0 (marker rendering — MERGED TO STABLE 2026-07-07)
+
+User sign-off after one beta pass ("this will do"); underline confirmed unwanted; Slack renders pasted markers only through its own formatting shortcuts (its behavior, not ours). Beta folded into `SyncNote.js`, beta file removed from repo + Harmony folders, branch `beta/markdown-markers` kept in history.
 
 The bold/italic idea, built as the **display-marker tier** (chosen over full rich text after the assessment in §30-era discussion: rich text = data-format migration with a long correctness tail; markers = display-only, storage untouched). Separate beta script + branch again, per user, for side-by-side comparison with stable.
 

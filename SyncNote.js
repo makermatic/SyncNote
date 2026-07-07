@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.26.0";          // exposure-range frame headers (Frame 42 - 43)
+  var SN_VERSION    = "0.27.0";          // **bold** / *italic* note markers (KB §31)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1352,7 +1352,7 @@ function SyncNote() {
       // surgery, no styling of native widgets, no pixel tuning.
       var isEditingThis = (editingNoteId === note.id);
 
-      var textLbl = new QLabel(note.text);
+      var textLbl = new QLabel(renderNoteHtml(note.text)); // markers → rich
       textLbl.wordWrap = true;
       // Selectable + copyable (drag to select, Ctrl+C / right-click Copy).
       try { textLbl.textInteractionFlags = Qt.TextSelectableByMouse; }
@@ -1394,7 +1394,7 @@ function SyncNote() {
         } else {
           trace("edit closed without changes (note " + note.id + ")");
         }
-        try { textLbl.text = String(note.text); } catch (e) {}
+        try { textLbl.text = renderNoteHtml(note.text); } catch (e) {}
         try { box.plainText = String(note.text); } catch (e) {}
         try { box.hide(); } catch (e) {}
         try { textLbl.show(); } catch (e) {}
@@ -1575,6 +1575,22 @@ function SyncNote() {
     // Done notes read grayed-out — signals "handled, no need to re-read".
     // (The hybrid design retired styleNoteBox: display is a real QLabel,
     // the editor is a fully native QTextEdit — nothing to impersonate.)
+    // BETA (markers): render **bold** / *italic* in the DISPLAY label only.
+    // Storage stays plain text — old notes untouched, the editor shows raw
+    // markers, Copy All is unchanged (Slack renders the markers natively).
+    // Escape first so literal < > & in notes can't inject markup; newlines
+    // become <br> (rich mode ignores \n); the <span> wrapper forces QLabel
+    // onto the rich-text path even when a note has entities but no tags
+    // (otherwise "&amp;" would display literally).
+    function renderNoteHtml(text) {
+      var s = String(text);
+      s = s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      s = s.replace(/\*\*([^*]+)\*\*/g, "<b>$1</b>"); // ** before * on purpose
+      s = s.replace(/\*([^*]+)\*/g, "<i>$1</i>");
+      s = s.replace(/\n/g, "<br>");
+      return "<span>" + s + "</span>";
+    }
+
     function dimNoteText(lbl, done) {
       try { lbl.styleSheet = done ? "color: #808080;" : ""; } catch (e) {}
     }
