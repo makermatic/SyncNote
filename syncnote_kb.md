@@ -779,19 +779,6 @@ None of the v0.27.1–.3 attempts satisfied the user, and Fable access ran out m
 
 Future idea parked by user (explicitly not now): bold/italic in notes. → *Superseded: marker tier in beta as of 2026-07-07 (§31).* Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
-## 32. Implementation log — v0.28.x (window icon + mid-line Enter fix)
-
-### Custom title-bar window icon — EMBEDDED (v0.28.1)
-User finished a custom icon (`_icon/_exports/Icon.png`, 7.5 KB) and wanted it in the dialog title bar. User chose the **embedded** approach (over a separate PNG) so the script stays one self-contained file for student distribution.
-- **`SN_ICON_B64`** (module scope) holds the PNG as base64 (~10 KB single-line string; injected from the PNG via PowerShell placeholder-replace, not hand-pasted). base64 chars need no JS escaping.
-- **`buildDialog`** decodes it: `new QByteArray(b64)` → `QByteArray.fromBase64(...)` → `QPixmap.loadFromData(...)` → `new QIcon(pix)` → `dlg.setWindowIcon(...)`. Layered fallbacks: embed decode → on-disk `SyncNote.png` (`specialFolders.userScripts`, `QFileInfo.exists`) → Harmony default. Every step guarded + traced; icon is always purely cosmetic.
-- **`install.ps1`** still copies the PNG → `SyncNote.png` as the on-disk fallback (guarded by `Test-Path`).
-- **First uses:** `QByteArray`/`fromBase64`, `QPixmap.loadFromData`, `QIcon`, `setWindowIcon` — unproven bindings, defensively wrapped; deployed, pending in-app confirmation. If embed fails, the Message Log names it and the file fallback covers the user's machine.
-- **Hook-timing note:** the auto-install hook greps the payload for `SyncNote\.js`, so editing `install.ps1` alone does NOT trigger it — run it manually after installer changes.
-
-### Mid-line Enter didn't save while editing (v0.28.1)
-Editing a note and pressing Enter with the cursor **not at the end** inserted a newline instead of saving; new notes were fine because you always type at the end there. Root cause: the QTextEdit event filter (`makeEnterFilter`) is unreliable in this build, so both boxes actually depend on the `textChanged` fallback — which only checked whether the **last** character was `\n`. Fix: **`isEnterKeypress(prev, now)`** compares to the previous text and detects a single un-shifted Enter inserted *anywhere* (length +1 AND newline-count +1 AND no Shift); a lone Enter adds exactly one char so pastes/typing don't match. Both `commit`/`finishEdit` gained an optional `explicitText` param so the pre-newline text is what gets saved (the stray newline never persists). Applied to the add box and the edit box identically; the event filter is retained as a harmless primary path (idempotent via the editingNoteId / empty-text guards).
-
 ### §25.1 — Backup design: option B, the confirm-prompt variant
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.
