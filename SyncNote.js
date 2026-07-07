@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.27.2";          // rich-label height fixup (crammed long notes)
+  var SN_VERSION    = "0.27.4";          // reverts v0.27.1-.3 padding experiments to v0.27.0 layout
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1016,7 +1016,6 @@ function SyncNote() {
     var editingNoteId = null; // note unlocked for in-place editing, or null
     var editDraft = null;     // mid-edit text captured across rebuilds
     var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
-    var liveNoteLabels = {};  // noteId -> its display QLabel (height fixup)
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -1047,7 +1046,6 @@ function SyncNote() {
         }
       } catch (e) { /* best-effort */ }
       liveNoteBoxes = {};
-      liveNoteLabels = {};
 
       // Stash half-typed notes so an auto-refresh can't eat a draft.
       try {
@@ -1103,28 +1101,6 @@ function SyncNote() {
               }
             }
           } catch (e) {}
-          // Rich-text QLabels (marker rendering, v0.27.0) are known to
-          // UNDERESTIMATE their wrapped height — the layout then allots
-          // too little room and long notes paint into the bottom margin
-          // ("crammed" cards, v0.27.2). Re-measure each label at its real
-          // width and enforce the true height.
-          try {
-            var fixed = 0;
-            for (var lid in liveNoteLabels) {
-              if (!liveNoteLabels.hasOwnProperty(lid)) continue;
-              try {
-                var lbl = liveNoteLabels[lid];
-                var wpx = Number(lbl.width);
-                if (wpx <= 0) continue; // hidden (mid-edit) or unmeasured
-                var hfw = Number(lbl.heightForWidth(wpx));
-                if (hfw > 0 && hfw > Number(lbl.height)) {
-                  lbl.minimumHeight = hfw;
-                  fixed++;
-                }
-              } catch (e0) { /* next label */ }
-            }
-            if (fixed > 0) trace("label height fix: " + fixed + " label(s) grown");
-          } catch (e1) {}
         });
         mt.start(60);
       } catch (e) { /* immediate sizing already happened per card */ }
@@ -1350,11 +1326,7 @@ function SyncNote() {
 
       var textColW = new QWidget();
       var textCol = new QVBoxLayout(textColW);
-      // Fixed bottom margin (v0.27.1): short notes got a nice gap below the
-      // text only as LEFTOVER space (button column taller than text); long
-      // notes filled their card and looked crammed. This makes the same
-      // breathing room structural for every line count.
-      textCol.setContentsMargins(0, 0, 0, 12);
+      textCol.setContentsMargins(0, 0, 0, 0);
 
       // Sub link FIRST, date second (v0.22.2): the link then sits directly
       // under the green Frame header link, stacking the two click targets
@@ -1393,7 +1365,6 @@ function SyncNote() {
         ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
       sizeNoteInput(box);
       liveNoteBoxes[note.id] = box;
-      liveNoteLabels[note.id] = textLbl;
       addW(textCol, box);
 
       // Exactly one of the pair is ever visible.
