@@ -768,6 +768,9 @@ The bold/italic idea, built as the **display-marker tier** (chosen over full ric
 - Applied at the two display sites only (label build + post-edit update). The **editor shows raw markers** (plain-text editing, no WYSIWYG), **storage stays plain text** (old notes untouched, no escaping debt in the model), **Copy All unchanged** — pasted into Slack, `**bold**`/`*italic*` render natively there. Underline: no standard marker, deliberately not offered.
 - Known caveats for the beta pass: rich mode collapses runs of multiple spaces in notes; stray unpaired `*` stays literal (regex requires a closing pair). Notes written with markers show them literally in the STABLE build — harmless, and actually useful for the comparison.
 
+### v0.27.1 — consistent bottom padding in note cards
+Short notes had a pleasant gap below the text purely as *leftover* space (the three-button column props the card open); long notes fill their own card, so the text sat crammed against the bottom. Fix: `textCol.setContentsMargins(0, 0, 0, 12)` — the gap becomes structural and identical for every line count. Short cards unchanged (button column still dominates); long cards gain the 12px. Design note for the ledger: **if you like a spacing that exists only as leftover layout slack, promote it to an explicit margin before it disappears in another configuration.**
+
 Future idea parked by user (explicitly not now): bold/italic in notes. → *Superseded: marker tier in beta as of 2026-07-07 (§31).* Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant
