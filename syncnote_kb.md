@@ -749,6 +749,15 @@ New-territory risks: read-only QTextEdit as label (cosmetic), per-card QTextEdit
 
 **v0.24.2 → v0.24.3 (the palette saga, closed):** `palette(window-text)` ALSO rendered black. Root cause, now understood: **Harmony's dark theme is an application-wide Qt stylesheet, not a QPalette** — so every `palette(…)` lookup in a custom stylesheet resolves against the untouched factory palette (light theme, black text). Native-looking widgets get their colors from Harmony's own qss rules, which a custom `color:` declaration displaces. Consequence for the gotcha ledger (add to §7.3.5 instincts): **never use `palette(…)` in stylesheets inside Harmony; hardcode from Harmony's theme values.** Locked note text = `#b1b1b1` (Harmony's label gray).
 
+## 30. Implementation log — v0.26.0 (exposure-range headers)
+
+Group headers now show the sub's full exposure span: **`Frame 42 - 43`** (single-frame subs stay `Frame 42`). User formatting spec: plain numbers with **no zero-padding**, matching Harmony's own timeline fields (`padFrame` deleted; headers were `Frame 042` before); always the singular "Frame" (no pluralization — layout stability over grammar); left-aligned as ever. Clicking still jumps to the first frame.
+
+- **`exposureMap(colName)`**: ONE pass over the column returns `{first, last}` per drawing — replaces the per-drawing `firstFrameOfDrawing` scans inside `collectGroups` (cheaper than before; `firstFrameOfDrawing` itself remains for click-time jumps). Groups carry `frame` + `last`.
+- **Staleness signature includes `last`** — extending/trimming a sub's exposure now triggers the existing auto-refresh (~300 ms), which is what keeps the header text current with zero new machinery.
+- Copy All digest uses the same range format.
+- Defined edge: non-contiguous exposure shows the full first-to-last span (user-accepted).
+
 Future idea parked by user (explicitly not now): bold/italic in notes. Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
 ### §25.1 — Backup design: option B, the confirm-prompt variant

@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.25.0";          // note editing (hybrid design) graduates to stable
+  var SN_VERSION    = "0.26.0";          // exposure-range frame headers (Frame 42 - 43)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -815,22 +815,40 @@ function SyncNote() {
     } catch (e) { /* caller's undo accum still closes */ }
   }
 
-  // Every drawing in the element, plus any drawing that has notes,
-  // each with its first exposed frame (-1 if not currently exposed).
+  // One pass over the whole Notes column: first AND last exposed frame per
+  // drawing (v0.26.0) — cheaper than the old per-drawing scans, and the
+  // last frame feeds the "Frame 42 - 43" range headers + the staleness
+  // signature (so exposure-length changes auto-refresh the panel).
+  function exposureMap(colName) {
+    var map = {};
+    var n = frame.numberOf();
+    for (var f = 1; f <= n; f++) {
+      var d = "";
+      try { d = column.getEntry(colName, 1, f); } catch (e) { continue; }
+      if (!d || d === "") continue;
+      if (!map[d]) map[d] = { first: f, last: f };
+      else map[d].last = f;
+    }
+    return map;
+  }
+
+  // Every drawing in the element, plus any drawing that has notes, each
+  // with its first/last exposed frames (-1 if not currently exposed).
   function collectGroups(layer, model) {
     var seen = {};
     var groups = [];
+    var exp = exposureMap(layer.column);
 
     var timings = column.getDrawingTimings(layer.column) || [];
     for (var i = 0; i < timings.length; i++) {
       var dn = timings[i];
       if (seen[dn]) continue;
       seen[dn] = true;
-      var ff = firstFrameOfDrawing(layer.column, dn);
+      var e1 = exp[dn];
       // A drawing with no exposure AND no notes carries no information —
       // hide it instead of cluttering the list with "(not exposed)" cards.
-      if (ff < 0 && notesFor(model, layer.elementId, dn).length === 0) continue;
-      groups.push({ drawing: dn, frame: ff });
+      if (!e1 && notesFor(model, layer.elementId, dn).length === 0) continue;
+      groups.push({ drawing: dn, frame: e1 ? e1.first : -1, last: e1 ? e1.last : -1 });
     }
 
     var byEl = model.notesByDrawing[String(layer.elementId)] || {};
@@ -838,7 +856,8 @@ function SyncNote() {
       if (!byEl.hasOwnProperty(key) || seen[key]) continue;
       if (!byEl[key] || byEl[key].length === 0) continue; // no actual notes
       seen[key] = true;
-      groups.push({ drawing: key, frame: firstFrameOfDrawing(layer.column, key) });
+      var e2 = exp[key];
+      groups.push({ drawing: key, frame: e2 ? e2.first : -1, last: e2 ? e2.last : -1 });
     }
 
     groups.sort(function (a, b) {
@@ -1003,7 +1022,8 @@ function SyncNote() {
       var groups = collectGroups(layer, model);
       var parts = [];
       for (var i = 0; i < groups.length; i++) {
-        parts.push(groups[i].drawing + ":" + groups[i].frame);
+        // first AND last: exposure-length changes must read as stale too
+        parts.push(groups[i].drawing + ":" + groups[i].frame + "-" + groups[i].last);
       }
       return parts.join("|");
     }
@@ -1179,6 +1199,7 @@ function SyncNote() {
     function makeGroupWidget(group) {
       var drawingName = group.drawing;
       var frameNo = group.frame;
+      var lastNo = group.last;
 
       var box = new QFrame();
       box.frameShape = QFrame.StyledPanel;
@@ -1187,18 +1208,22 @@ function SyncNote() {
 
       var notes = notesFor(model, layer.elementId, drawingName);
 
-      // Header row: green clickable "Frame 009" link (padded to scene
-      // length digits) — plus, when the group has NO notes, a remove
-      // button that deletes the sub itself. Link-based navigation is
-      // deliberate: card-wide click filters worked but felt unreliable
-      // (user call, v0.8.3) — links are handled natively by QLabel.
+      // Header row: green clickable "Frame 42" / "Frame 42 - 43" link —
+      // plain numbers with no zero-padding, matching Harmony's own
+      // timeline fields (v0.26.0 user spec); the range shows first & last
+      // exposed frame, clicking always jumps to the first. Plus, when the
+      // group has NO notes, a remove button that deletes the sub itself.
+      // Link-based navigation is deliberate: card-wide click filters felt
+      // unreliable (user call, v0.8.3) — links are native QLabel behavior.
       var headRowW = new QWidget();
       var headRow = new QHBoxLayout(headRowW);
       headRow.setContentsMargins(0, 0, 0, 0);
       if (frameNo > 0) {
+        var frameText = "Frame " + frameNo +
+                        (lastNo > frameNo ? " - " + lastNo : "");
         var head = new QLabel(
-          '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">Frame ' +
-          padFrame(frameNo) + "</a>");
+          '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">' +
+          frameText + "</a>");
         head.toolTip = "Go to Frame " + frameNo;
         head.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
         addW(headRow, head, 1);
@@ -1729,7 +1754,9 @@ function SyncNote() {
         var notes = notesFor(model, layer.elementId, g.drawing);
         if (notes.length === 0) continue;
         lines.push("");
-        lines.push((g.frame > 0 ? "Frame " + padFrame(g.frame) : "(not exposed)") +
+        lines.push((g.frame > 0
+                     ? "Frame " + g.frame + (g.last > g.frame ? " - " + g.last : "")
+                     : "(not exposed)") +
                    "  (Sub " + g.drawing + ")");
         for (var j = 0; j < notes.length; j++) {
           var mark = (notes[j].done === true) ? "[x]" : "[ ]";
@@ -1907,12 +1934,6 @@ function SyncNote() {
     var s = String(num);
     while (s.length < width) s = "0" + s;
     return s;
-  }
-
-  // Frame numbers padded to the scene's length: 60 frames -> 2 digits,
-  // 300 frames -> 3 digits, etc.
-  function padFrame(f) {
-    return pad(f, String(frame.numberOf()).length);
   }
 
   // Dump the composite input port map to the Message Log — passive
