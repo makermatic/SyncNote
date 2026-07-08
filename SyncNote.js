@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.28.2";          // mid-line Enter-save fix, shipped SOLO + instrumented
+  var SN_VERSION    = "0.28.3";          // note-card bottom padding: the untested 24px, finally tested
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1336,7 +1336,13 @@ function SyncNote() {
 
       var textColW = new QWidget();
       var textCol = new QVBoxLayout(textColW);
-      textCol.setContentsMargins(0, 0, 0, 0);
+      // Fixed 24px bottom margin (v0.28.3): short notes get a pleasant gap
+      // below the text only as LEFTOVER space (the button column props the
+      // card open); long notes fill their card and looked crammed. 24px ≈
+      // that leftover, made structural for every line count. (12px was
+      // tried in v0.27.1 and read too small; 24 was built in v0.27.3 but
+      // never tested before the rollback — this is that test.)
+      textCol.setContentsMargins(0, 0, 0, 24);
 
       // Sub link FIRST, date second (v0.22.2): the link then sits directly
       // under the green Frame header link, stacking the two click targets
