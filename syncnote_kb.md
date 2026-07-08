@@ -787,6 +787,14 @@ Future idea parked by user (explicitly not now): bold/italic in notes. → *Supe
 
 Pattern-book: **when a gap/size error SCALES with content, stop tuning constants — something is misreporting its size proportionally.**
 
+### v0.28.5/.6 — CASE CLOSED: unfixable on this engine (2026-07-10)
+The instrumented final swing returned the verdict: `label fixup: 1 grown, 2 unchanged; last: w=283 docH=56 lblH=80 twOK=false`.
+- **`twOK=false`**: the `QTextDocument.textWidth` setter is **silently unbound** (readback proved the width never applied) — so no width-constrained text measurement exists on this engine. `docH=56` was the text at a meaningless width; garbage in, no fix out.
+- **`lblH=80`** for a note painting ~100px of text: the rich-label under-reporting confirmed numerically, ~3-4px/line as estimated from screenshots.
+- The user's container theory (shared height negotiation between text and button columns through wrapper widgets) was directionally right — but both the label-level and card-level corrections require the measurement that doesn't exist. The only ruler that works (`sizeNoteInput`) works because a *visible* QTextEdit sets its own document width internally on resize; a hidden one never does, and we can't set it manually.
+- **Resolution (v0.28.6):** fixup machinery removed; the 24px bottom margin is KEPT (screenshots showed it makes 1-3-line notes look right; only longer notes keep some erosion, ~3-4px per wrapped line). Accepted residual, user-sanctioned retirement ("if it doesn't work, let's move on"). Do not reopen without a NEW measurement primitive (e.g., if a future Harmony binds `textWidth`, or QFontMetrics.boundingRect overloads prove usable).
+- Five attempts, four theories, one proven cause. The gate ("no fix without the trace") is what ended it — **instrument-first turned a shrug into a closed file.**
+
 ## 32. Implementation log — v0.28.2 (mid-line Enter-save fix, solo + instrumented)
 
 History: this fix first shipped in v0.28.1 **bundled with the embedded window icon**, the version "broke a lot of things" and was rolled back whole — which change broke it was never isolated. v0.28.2 re-ships the Enter fix ALONE (user decision to focus here; icon deferred). If v0.28.2 is clean, the icon embed was the breaker by elimination.
