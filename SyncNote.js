@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.28.4";          // 24px margin + true label heights (doc-engine measured)
+  var SN_VERSION    = "0.28.5";          // label fixup: forced relayout + ruler verification (final swing)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1113,6 +1113,8 @@ function SyncNote() {
           // and enforce it as the label's minimum. Grow-only; all guarded.
           try {
             var fixed = 0;
+            var skipped = 0;
+            var sample = ""; // last label's numbers, for the Message Log
             for (var lid in liveNoteLabels) {
               if (!liveNoteLabels.hasOwnProperty(lid)) continue;
               try {
@@ -1125,16 +1127,33 @@ function SyncNote() {
                 try { doc = bx.document(); } catch (e0) { doc = bx.document; }
                 try { doc.textWidth = wpx; }
                 catch (e1) { try { doc.setTextWidth(wpx); } catch (e2) {} }
+                // Verify the ruler width actually applied (first-use
+                // binding, v0.28.5): if not, the height below is for
+                // UNWRAPPED text and must not be trusted.
+                var twOK = false;
+                try { twOK = Math.abs(Number(doc.textWidth) - wpx) <= 1; }
+                catch (e5) { /* unreadable: trust the measurement anyway */ twOK = true; }
                 var s = doc.size;
                 var dh = (typeof s.height === "function") ? s.height() : s.height;
                 dh = Math.ceil(Number(dh));
-                if (dh > 0 && dh > Number(lbl.height)) {
+                sample = "w=" + wpx + " docH=" + dh + " lblH=" + Number(lbl.height) +
+                         " twOK=" + twOK;
+                if (twOK && dh > 0 && dh > Number(lbl.height)) {
                   lbl.minimumHeight = dh;
                   fixed++;
+                } else {
+                  skipped++;
                 }
               } catch (e3) { /* next label */ }
             }
-            if (fixed > 0) trace("label height fix: " + fixed + " label(s) grown");
+            // v0.20.1 lesson: size constraints set post-show only take
+            // effect at the NEXT relayout, and nothing was triggering one
+            // — force it now (activate() is proven since v0.20.3).
+            if (fixed > 0) {
+              try { listLayout.activate(); } catch (e6) {}
+            }
+            trace("label fixup: " + fixed + " grown, " + skipped +
+                  " unchanged; last: " + sample);
           } catch (e4) {}
         });
         mt.start(60);
