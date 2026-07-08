@@ -779,6 +779,14 @@ None of the v0.27.1–.3 attempts satisfied the user, and Fable access ran out m
 
 Future idea parked by user (explicitly not now): bold/italic in notes. → *Superseded: marker tier in beta as of 2026-07-07 (§31).* Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
+## 33. Implementation log — v0.28.3/.4 (the padding saga, root-caused at last)
+
+**v0.28.3** finally tested the 24px bottom margin built in v0.27.3 — still wrong, but the failure screenshot held the answer: with 2/3/6-line notes side by side, **the gap eroded ~3-4px per line**. A missing constant shorts every card equally; per-line erosion means the label paints taller than it reports — **rich-text QLabels under-report wrapped height** (Qt defect; every note label is rich since v0.27.0's marker `<span>` wrap). This kills all flat-number fixes and also explains v0.27.2's failure (its `heightForWidth` fixup asked the same broken text engine that produced the bad hint).
+
+**v0.28.4 fix:** measure with a ruler that doesn't lie — each card's hidden edit box holds the same text in the same font, and QTextDocument height at a given width has been trusted since v0.7 (`sizeNoteInput`). The 60 ms post-rebuild batch sets `box.document().textWidth = label.width`, reads `doc.size.height`, and enforces it as the label's `minimumHeight` (grow-only, fully guarded, traced as `label height fix: N label(s) grown`). The 24px margin stays; with true heights it becomes the real, uniform gap. Caveats: `textWidth` setter is a first-use binding (guarded both property/setter forms); marker-bold segments wrap slightly differently than the plain text in the box (small undercount on marker-heavy notes); mid-edit labels skipped (`width <= 0`).
+
+Pattern-book: **when a gap/size error SCALES with content, stop tuning constants — something is misreporting its size proportionally.**
+
 ## 32. Implementation log — v0.28.2 (mid-line Enter-save fix, solo + instrumented)
 
 History: this fix first shipped in v0.28.1 **bundled with the embedded window icon**, the version "broke a lot of things" and was rolled back whole — which change broke it was never isolated. v0.28.2 re-ships the Enter fix ALONE (user decision to focus here; icon deferred). If v0.28.2 is clean, the icon embed was the breaker by elimination.
