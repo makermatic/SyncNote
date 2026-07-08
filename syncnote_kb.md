@@ -779,7 +779,15 @@ None of the v0.27.1–.3 attempts satisfied the user, and Fable access ran out m
 
 Future idea parked by user (explicitly not now): bold/italic in notes. → *Superseded: marker tier in beta as of 2026-07-07 (§31).* Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
-### §25.1 — Backup design: option B, the confirm-prompt variant
+## 32. Implementation log — v0.28.2 (mid-line Enter-save fix, solo + instrumented)
+
+History: this fix first shipped in v0.28.1 **bundled with the embedded window icon**, the version "broke a lot of things" and was rolled back whole — which change broke it was never isolated. v0.28.2 re-ships the Enter fix ALONE (user decision to focus here; icon deferred). If v0.28.2 is clean, the icon embed was the breaker by elimination.
+
+**The bug, correctly understood:** not reversed keybindings. The Enter machinery is two-layer (true key filter + textChanged fallback); the filter appears inert in this build, and the fallback only recognized Enter when the **last character** became `\n` — i.e. cursor at the END of the text. The add box always satisfies that (you type at the end); the edit box almost never does (cursor sits mid-sentence) → Enter inserted a newline instead of saving, masquerading as "Enter and Shift+Enter are swapped."
+
+**The fix:** `isEnterKeypress(prev, now)` — a single un-shifted Enter adds exactly one char AND exactly one newline, *anywhere* (`looksLikeEnter` + live Shift check via `QApplication.keyboardModifiers()`, the mechanism the add box has trusted since v0.7). Both boxes track `prev*Text` and commit the **pre-newline** text (`explicitText` param on `commit`/`finishEdit`), so the stray line break never persists. Programmatic text sets change more than one char and can't masquerade; the edit box also resyncs `prevEditText` while locked.
+
+**Instrumentation (Message Log):** the filter traces `Enter via key filter` if it ever actually fires (settles the inert-filter question); each box traces `Enter via fallback (…) — saving` and `newline kept (…) — shift detected`. The user reported Shift+Enter *saving* in edit mode, which the model doesn't predict — the traces will confirm or kill that observation.
 Kept on the shelf for if teachers ask to confirm saves (likely feedback per user). Same triggers and guards as A, but instead of silently calling `saveAll()`:
 - Show a two-button dialog: *"You added notes this session — save the scene now so they aren't lost?"* **[Save] [Not Now]**.
 - API: `MessageBox.warning(text, button0, button1, button2, title, parent)` supports up to 3 buttons (pass 1 to show, 0 to hide) — **verified to exist, but the return-value semantics are under-documented** (classic Qt3-style: expected to return the pressed button's index/value). Needs one live probe: log the return value for each button before trusting it. If the return proves undecipherable, degrade to option D (amber "unsaved notes — Ctrl+S" status-bar reminder) rather than guessing.

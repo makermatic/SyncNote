@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.27.4";          // reverts v0.27.1-.3 padding experiments to v0.27.0 layout
+  var SN_VERSION    = "0.28.2";          // mid-line Enter-save fix, shipped SOLO + instrumented
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1276,9 +1276,14 @@ function SyncNote() {
       addW(addRow, noteBtn);
       addW(v, addRowW);
 
-      function commit() {
-        var txt = "";
-        try { txt = String(input.plainText); } catch (e) {}
+      // explicitText (optional): the text to save, bypassing input.plainText
+      // — the textChanged path passes the text as it was BEFORE the Enter's
+      // newline was inserted, so the stray line break never persists.
+      function commit(explicitText) {
+        var txt = (explicitText !== undefined) ? explicitText : "";
+        if (explicitText === undefined) {
+          try { txt = String(input.plainText); } catch (e) {}
+        }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
         addNote(model, layer.elementId, drawingName, txt);
@@ -1289,28 +1294,33 @@ function SyncNote() {
         delete drafts[drawingName];
         refresh();
       }
-      noteBtn.clicked.connect(commit);
+      noteBtn.clicked.connect(function () { commit(); });
 
       // Enter handling, primary path: event filter (consumes the key).
-      var filter = makeEnterFilter(commit);
+      var filter = makeEnterFilter(function () { commit(); });
       if (filter) {
         try { input.installEventFilter(filter); } catch (e) { filter = null; }
       }
 
       // Enter handling, fallback path + auto-grow: if the filter is inert,
-      // a plain Enter lands as a trailing newline in the text — detect it,
-      // check Shift via the live keyboard state, and submit.
+      // the Enter lands as a newline in the text. Detect a single un-shifted
+      // Enter ANYWHERE (v0.28.2 — not just at the end) and commit the
+      // pre-newline text.
+      var prevAddText = "";
+      try { prevAddText = String(input.plainText); } catch (e) {}
       input.textChanged.connect(function () {
         sizeNoteInput(input);
         try {
           var t = String(input.plainText);
-          if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
-            var shiftHeld = false;
-            try {
-              shiftHeld = (QApplication.keyboardModifiers() & Qt.ShiftModifier) != 0;
-            } catch (e) { /* can't read modifiers; treat Enter as submit */ }
-            if (!shiftHeld) commit(); // commit trims the trailing newline
+          if (isEnterKeypress(prevAddText, t)) {
+            trace("Enter via fallback (add box) — saving");
+            commit(prevAddText);
+            return;
           }
+          if (looksLikeEnter(prevAddText, t)) {
+            trace("newline kept (add box) — shift detected"); // diagnostics
+          }
+          prevAddText = t;
         } catch (e) { /* typing must never break */ }
       });
 
@@ -1380,10 +1390,12 @@ function SyncNote() {
       // Flip back to the label, saving or discarding. Programmatic text
       // resets re-trigger textChanged, so state is cleared FIRST and the
       // handler ignores non-editing events.
-      var finishEdit = function (saveIt) {
+      var finishEdit = function (saveIt, explicitText) {
         if (editingNoteId !== note.id) return;
-        var txt = "";
-        try { txt = String(box.plainText); } catch (e) {}
+        var txt = (explicitText !== undefined) ? explicitText : "";
+        if (explicitText === undefined) {
+          try { txt = String(box.plainText); } catch (e) {}
+        }
         txt = txt.replace(/^\s+|\s+$/g, "");
         editingNoteId = null;
         editDraft = null;
@@ -1408,18 +1420,31 @@ function SyncNote() {
       if (editKeyFilter) {
         try { box.installEventFilter(editKeyFilter); } catch (e) {}
       }
+      // Position-independent Enter detection (v0.28.2): compare with the
+      // previous text so a mid-line Enter saves too — the cursor is almost
+      // never at the END while editing, which is why the old trailing-"\n"
+      // check made Enter act like Shift+Enter here. prevEditText tracks
+      // content; programmatic sets (✎ prefill / finishEdit reset) change
+      // more than one char, so they never masquerade as a keypress.
+      var prevEditText = "";
+      try { prevEditText = String(box.plainText); } catch (e) {}
       box.textChanged.connect(function () {
-        if (editingNoteId !== note.id) return; // programmatic reset / locked
+        if (editingNoteId !== note.id) {        // programmatic reset / locked
+          try { prevEditText = String(box.plainText); } catch (e) {}
+          return;
+        }
         sizeNoteInput(box); // auto-grow while typing
         try {
           var t = String(box.plainText);
-          if (t.length > 0 && t.charAt(t.length - 1) === "\n") {
-            var shiftHeld = false;
-            try {
-              shiftHeld = (QApplication.keyboardModifiers() & Qt.ShiftModifier) != 0;
-            } catch (e) { /* treat Enter as save */ }
-            if (!shiftHeld) finishEdit(true);
+          if (isEnterKeypress(prevEditText, t)) {
+            trace("Enter via fallback (edit box) — saving");
+            finishEdit(true, prevEditText); // save the pre-newline text
+            return;
           }
+          if (looksLikeEnter(prevEditText, t)) {
+            trace("newline kept (edit box) — shift detected"); // diagnostics
+          }
+          prevEditText = t;
         } catch (e) { /* typing must never break */ }
       });
 
@@ -1619,6 +1644,32 @@ function SyncNote() {
     // Event filter so Enter submits and Shift+Enter inserts a newline.
     // Returns null if this engine can't build QObject-based filters — the
     // textChanged fallback in makeGroupWidget covers that case.
+    // True when the change from `prev` to `now` is a single un-shifted
+    // Enter keypress inserted ANYWHERE — not just at the end. The old
+    // trailing-"\n" check only caught Enter at the END of the text, which
+    // the add box always satisfies (cursor lives at the end) but editing
+    // almost never does — so mid-line Enter inserted a newline instead of
+    // saving (v0.28.2). A lone Enter adds exactly one char and exactly one
+    // newline; pastes and normal typing don't match. Shift is read from
+    // the live keyboard state, the same mechanism the add box has trusted
+    // since v0.7.
+    function countNewlines(s) {
+      var n = 0;
+      for (var i = 0; i < s.length; i++) if (s.charAt(i) === "\n") n++;
+      return n;
+    }
+    function looksLikeEnter(prev, now) {
+      return now.length === prev.length + 1 &&
+             countNewlines(now) === countNewlines(prev) + 1;
+    }
+    function isEnterKeypress(prev, now) {
+      if (!looksLikeEnter(prev, now)) return false;
+      try {
+        if (QApplication.keyboardModifiers() & Qt.ShiftModifier) return false;
+      } catch (e) { /* can't read shift → treat as Enter-save */ }
+      return true;
+    }
+
     function makeEnterFilter(commitFn) {
       try {
         var f = new QObject(dlg);
@@ -1627,7 +1678,11 @@ function SyncNote() {
             if (event.type() === QEvent.KeyPress) {
               var k = event.key();
               if (k === Qt.Key_Return || k === Qt.Key_Enter) {
-                if (event.modifiers() & Qt.ShiftModifier) return false; // newline
+                if (event.modifiers() & Qt.ShiftModifier) {
+                  trace("Shift+Enter via key filter — newline"); // diagnostics
+                  return false;
+                }
+                trace("Enter via key filter — saving"); // diagnostics: filter alive!
                 commitFn();
                 return true; // consume: Enter = save note
               }
