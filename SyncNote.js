@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.28.3";          // note-card bottom padding: the untested 24px, finally tested
+  var SN_VERSION    = "0.28.4";          // 24px margin + true label heights (doc-engine measured)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1016,6 +1016,7 @@ function SyncNote() {
     var editingNoteId = null; // note unlocked for in-place editing, or null
     var editDraft = null;     // mid-edit text captured across rebuilds
     var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
+    var liveNoteLabels = {};  // noteId -> its display QLabel (height fixup)
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -1046,6 +1047,7 @@ function SyncNote() {
         }
       } catch (e) { /* best-effort */ }
       liveNoteBoxes = {};
+      liveNoteLabels = {};
 
       // Stash half-typed notes so an auto-refresh can't eat a draft.
       try {
@@ -1101,6 +1103,39 @@ function SyncNote() {
               }
             }
           } catch (e) {}
+          // Rich-text QLabels UNDER-REPORT their wrapped height by a few px
+          // per line (Qt defect; every note label is rich since the v0.27.0
+          // markers), so the text paints into the bottom margin — the gap
+          // erodes as line count grows (v0.28.4, diagnosed from screenshot).
+          // Fix: measure the true height with the document engine we trust
+          // (each card's hidden edit box holds the same text in the same
+          // font — set its document to the label's width, read the height)
+          // and enforce it as the label's minimum. Grow-only; all guarded.
+          try {
+            var fixed = 0;
+            for (var lid in liveNoteLabels) {
+              if (!liveNoteLabels.hasOwnProperty(lid)) continue;
+              try {
+                var lbl = liveNoteLabels[lid];
+                var bx = liveNoteBoxes[lid];
+                if (!lbl || !bx) continue;
+                var wpx = Number(lbl.width);
+                if (wpx <= 0) continue; // hidden (mid-edit) or unmeasured
+                var doc = null;
+                try { doc = bx.document(); } catch (e0) { doc = bx.document; }
+                try { doc.textWidth = wpx; }
+                catch (e1) { try { doc.setTextWidth(wpx); } catch (e2) {} }
+                var s = doc.size;
+                var dh = (typeof s.height === "function") ? s.height() : s.height;
+                dh = Math.ceil(Number(dh));
+                if (dh > 0 && dh > Number(lbl.height)) {
+                  lbl.minimumHeight = dh;
+                  fixed++;
+                }
+              } catch (e3) { /* next label */ }
+            }
+            if (fixed > 0) trace("label height fix: " + fixed + " label(s) grown");
+          } catch (e4) {}
         });
         mt.start(60);
       } catch (e) { /* immediate sizing already happened per card */ }
@@ -1381,6 +1416,7 @@ function SyncNote() {
         ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
       sizeNoteInput(box);
       liveNoteBoxes[note.id] = box;
+      liveNoteLabels[note.id] = textLbl;
       addW(textCol, box);
 
       // Exactly one of the pair is ever visible.
