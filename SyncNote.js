@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.30.5";          // release stamp for the always-update E2E test
+  var SN_VERSION    = "0.31.0";          // FIRST BLESSED TEACHER RELEASE (2026-07-10)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -941,21 +941,10 @@ function SyncNote() {
     dlg.setWindowTitle("SyncNote " + SN_VERSION + "  —  " + scene.currentScene());
     dlg.minimumWidth = 380;
     dlg.minimumHeight = 520;
-
-    // Custom title-bar icon (v0.29.0): install.ps1 puts SyncNote.png next
-    // to this script; specialFolders.userScripts is that folder for the
-    // running instance. FILE-based on purpose — the embedded-base64 route
-    // is what broke v0.28.1 (KB §32). Purely cosmetic: every failure path
-    // just leaves Harmony's default icon and says why in the Message Log.
-    try {
-      var iconPath = String(specialFolders.userScripts) + "/SyncNote.png";
-      if (new QFileInfo(iconPath).exists()) {
-        dlg.setWindowIcon(new QIcon(iconPath));
-        trace("window icon set from " + iconPath);
-      } else {
-        trace("window icon not found at " + iconPath);
-      }
-    } catch (e) { trace("could not set window icon (" + e + ")"); }
+    // NOTE: no custom window icon — dlg.setWindowIcon is UNBOUND in
+    // Harmony's Qt Script (live TypeError, 2026-07-10). Case closed after
+    // three attempts; full history in KB §34. Don't reopen unless a future
+    // Harmony binds the call.
 
     var outer = new QVBoxLayout(dlg);
 
@@ -2106,8 +2095,8 @@ function SyncNote() {
           var lbl = new QLabel(
             "SyncNote has been updated.\n\n" +
             "v" + SN_VERSION + "  →  v" + updateRemote.version + "\n\n" +
-            "Relaunch SyncNote to use the new version, or keep working —\n" +
-            "this window stays on v" + SN_VERSION + " until relaunched.");
+            "Relaunch SyncNote to use the new version, or keep working.\n" +
+            "This window stays on v" + SN_VERSION + " until relaunched.");
           lbl.wordWrap = true;
           addW(v, lbl);
           var rowW = new QWidget();

@@ -48,8 +48,9 @@ your instincts disagree, the KB wins.
 - Embedding large base64 strings in the script broke everything once (KB §32).
 - The composite's LAST-connected port renders frontmost (docs say otherwise);
   verify with `compositionOrder.buildDefaultCompositionOrder()`, never ports.
-- Window icon (`setWindowIcon`) doesn't render on Harmony 22 — retired; the
-  guarded loader remains and traces to the Message Log if ever revisited.
+- Window icon: `dlg.setWindowIcon` is UNBOUND in Harmony 22's Qt Script
+  (live TypeError) — all icon code removed (v0.30.7). Don't reattempt
+  unless a future Harmony binds the call.
 
 ## Releases & the self-updater (v0.30.0+)
 
