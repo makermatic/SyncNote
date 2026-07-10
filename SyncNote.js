@@ -37,7 +37,11 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
+<<<<<<< HEAD
   var SN_VERSION    = "0.30.1";          // end-to-end updater test stamp (same build as 0.30.0)
+=======
+  var SN_VERSION    = "0.30.3";          // release stamp for the dialog-flow E2E test
+>>>>>>> main
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2091,12 +2095,8 @@ function SyncNote() {
           trace("first launch on this machine: force-updating to v" + remoteVer);
           doInstall(true);
         } else {
-          trace("update available: v" + remoteVer + " — click the status bar");
-          try {
-            statusLbl.text = statusPrefix +
-              '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">' +
-              nb("New Update Available") + "</a>";
-          } catch (e1) {}
+          trace("update available: v" + remoteVer + " — offering the dialog");
+          promptUpdate(); // v0.30.2: dialog instead of a status-bar link
         }
       } catch (e) { trace("update processing error (" + e + ")"); }
     }
@@ -2170,32 +2170,37 @@ function SyncNote() {
       vt.start(2000);
     }
 
-    function onUpdateClick() {
-      if (!updateRemote) return; // version text is plain unless one is pending
+    // Update offer (v0.30.2, user design after seeing the forced-update
+    // popup in action): a MODAL child dialog at launch when a newer
+    // release exists. Modal = Escape rejects only this dialog; the panel
+    // never sees the keypress (same mechanics as the Clear-all confirm).
+    // "Update Later" simply defers to the next launch's check.
+    function promptUpdate() {
+      if (!updateRemote) return;
       var d = new QDialog(dlg);
       d.setWindowTitle("SyncNote Update");
-      d.minimumWidth = 320;
+      d.minimumWidth = 340;
       var v = new QVBoxLayout(d);
       var lbl = new QLabel(
-        "Update SyncNote v" + SN_VERSION + " → v" + updateRemote.version + "?\n" +
-        "Harmony must be restarted afterward.");
+        "A new version is available. Would you like to update?\n\n" +
+        "v" + SN_VERSION + "  →  v" + updateRemote.version);
       lbl.wordWrap = true;
       addW(v, lbl);
       var rowW = new QWidget();
       var row = new QHBoxLayout(rowW);
       row.setContentsMargins(0, 0, 0, 0);
-      var okBtn = new QPushButton("Update");
+      var okBtn = new QPushButton("Update Now");
       try { okBtn.setProperty("default", true); } catch (e0) {}
       okBtn.clicked.connect(function () { d.accept(); });
-      var noBtn = new QPushButton("Not Now");
+      var noBtn = new QPushButton("Update Later");
       try { noBtn.setProperty("autoDefault", false); } catch (e1) {}
       noBtn.clicked.connect(function () { d.reject(); });
       addW(row, okBtn);
       addW(row, noBtn);
       addW(v, rowW);
       if (d.exec()) doInstall(false);
+      else trace("update deferred by user — will offer again next launch");
     }
-    try { statusLbl.linkActivated.connect(onUpdateClick); } catch (e) {}
 
     startUpdateCheck();
 

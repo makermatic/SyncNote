@@ -797,6 +797,8 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 - **Install:** attempt `File.open(2)/write` (unproven binding — the READBACK is the arbiter, not the API); on verify-failure fall back to OS copy of the verified temp file (`cmd /c copy /Y` / `cp -f` via Process2) + 2s re-verify. Success → "restart Harmony" message; failure → honest message + manual-install advice. `curl -f` means HTTP errors write NOTHING; content sniff guards the rest — an error page can never brick an install (the probe's 404 proved the gate works).
 - Overwriting the running script is safe (Windows doesn't lock it; the loaded copy runs until restart).
 
+**Phase-1 E2E PASSED (2026-07-10):** fresh machine flag → 0.30.0 force-updated itself to the release-stamped 0.30.1 within ~4s; restart showed 0.30.1 + "up to date". **v0.30.2 UX change (user, after seeing it live):** the status-bar link is replaced by a launch-time MODAL dialog — "A new version is available. Would you like to update? vX → vY" with [Update Now]/[Update Later]. Modal child = Escape rejects only the dialog, never the panel (Clear-all-confirm mechanics). "Later" defers to the next launch's check. Status bar stays a plain version readout.
+
 ## 35. Implementation log — v0.29.1 (plain-text pastes)
 
 Rich clipboard content pasted into the note boxes rendered WITH formatting — images included (the reporting screenshot featured an entire YouTube card inside the add box). Saved notes were always plain (we only read `plainText`), so this was pure box-level WYSIWYG deception. Fix: `acceptRichText = false` on the add box and the edit box (the Copy All fallback box is read-only; not applicable). One property, canonical Qt solution, guarded.
