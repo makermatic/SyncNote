@@ -38,7 +38,6 @@ function SyncNote() {
   // Constants
   // ---------------------------------------------------------------------
 <<<<<<< HEAD
-  var SN_VERSION    = "0.30.1";          // end-to-end updater test stamp (same build as 0.30.0)
 =======
   var SN_VERSION    = "0.30.3";          // release stamp for the dialog-flow E2E test
 >>>>>>> main
