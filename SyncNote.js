@@ -37,7 +37,11 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.29.1";          // note boxes paste as plain text (acceptRichText = false)
+  var SN_VERSION    = "0.30.0";          // self-updater: checks the release branch (KB §36)
+  // Teachers' update channel: the GitHub release branch (public repo).
+  // main = development; release only receives Zack-blessed versions.
+  var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
+  var SN_FIRSTRUN_PREF = "SYNCNOTE_AUTOUPDATED_ONCE"; // machine-level, via preferences
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -997,9 +1001,12 @@ function SyncNote() {
     // space) — it looks identical to a plain space in most editors. Safe:
     // this file is UTF-8 and Harmony reads it as such (see ✓ ✕ • glyphs).
     function nb(s) { return String(s).replace(/ /g, " "); }
-    var statusLbl = new QLabel(
+    // statusPrefix is reused by the updater (v0.30.0): when a newer release
+    // exists, the version segment becomes a clickable "New Update Available".
+    var statusPrefix =
       nb("Layer: " + layer.node) + "  •  " + nb("element #" + layer.elementId) +
-      "  •  " + nb(notesPortInfo(layer.node)) + "  •  " + nb("v" + SN_VERSION));
+      "  •  " + nb(notesPortInfo(layer.node)) + "  •  ";
+    var statusLbl = new QLabel(statusPrefix + nb("v" + SN_VERSION));
     statusLbl.styleSheet = "color: gray; font-size: 10px;";
     statusLbl.wordWrap = true;
     // Compressible: without an explicit minimum, this label's size hint
@@ -1985,6 +1992,212 @@ function SyncNote() {
       var mode = askClearChoice();
       if (mode) doClear(mode);
     });
+
+    // ---- self-updater (v0.30.0, KB §36) --------------------------------
+    // At every launch, quietly download the release-branch script to temp
+    // (curl via Process2 — probe-proven; curl ships on Win10+ AND macOS,
+    // one identical command). A timer then verifies the download REALLY is
+    // our script before anything else happens: a 404/proxy page can never
+    // touch the installed file (curl -f writes nothing on HTTP errors, and
+    // content is sniffed anyway). Newer version → the status bar's version
+    // text becomes a "New Update Available" link → confirm → install →
+    // "restart Harmony". First-ever launch on a machine force-updates once
+    // (preferences flag, set only after a SUCCESSFUL check or install).
+    var updateTmp = "";
+    var updateRemote = null; // { version, content } once verified
+
+    function versionNewer(remote, local) {
+      var r = String(remote).split(".");
+      var l = String(local).split(".");
+      for (var i = 0; i < Math.max(r.length, l.length); i++) {
+        var a = parseInt(r[i], 10) || 0;
+        var b = parseInt(l[i], 10) || 0;
+        if (a !== b) return a > b;
+      }
+      return false;
+    }
+
+    function readWholeFile(path) {
+      try {
+        var f = new File(path);
+        f.open(1); // read mode — probe-proven
+        var s = String(f.read());
+        f.close();
+        return s;
+      } catch (e) { return null; }
+    }
+
+    function markFirstRunDone() {
+      try { preferences.setString(SN_FIRSTRUN_PREF, "done"); } catch (e) {}
+    }
+
+    function isFirstRun() {
+      try {
+        return String(preferences.getString(SN_FIRSTRUN_PREF, "")) !== "done";
+      } catch (e) { return false; } // can't read prefs → never force
+    }
+
+    function cleanupUpdateTmp() {
+      try { new File(updateTmp).remove(); } catch (e) { /* temp junk */ }
+    }
+
+    function startUpdateCheck() {
+      try {
+        var tmpDir = "";
+        try { tmpDir = String(specialFolders.temp); } catch (e0) {}
+        if (!tmpDir) { trace("update check skipped: no temp folder"); return; }
+        // Unique name per run: stale files from old runs can't be misread.
+        updateTmp = tmpDir + "/syncnote_update_" + (new Date()).getTime() + ".js";
+        var cmd = 'curl -f -L -s -o "' + updateTmp + '" "' + SN_UPDATE_URL + '"';
+        try { new Process2(cmd).launch(); }
+        catch (e1) { trace("update check: could not launch curl (" + e1 + ")"); return; }
+        var t;
+        try { t = new QTimer(dlg); } catch (e2) { t = new QTimer(); }
+        g_snKeepAlivePanel.push(t);
+        t.singleShot = true;
+        t.timeout.connect(onUpdateDownloaded);
+        t.start(4000); // probe: download completed in <1s; generous slack
+        trace("update check: querying the release channel…");
+      } catch (e) { trace("update check error (" + e + ")"); }
+    }
+
+    function onUpdateDownloaded() {
+      try {
+        if (!(new QFileInfo(updateTmp).exists())) {
+          trace("update check: no response (offline or channel unavailable) — will retry next launch");
+          return; // first-run flag deliberately left unset
+        }
+        var content = readWholeFile(updateTmp);
+        if (!content || content.indexOf("function SyncNote") < 0) {
+          trace("update check: download failed verification — ignored");
+          cleanupUpdateTmp();
+          return;
+        }
+        var m = content.match(/SN_VERSION\s*=\s*"([^"]+)"/);
+        if (!m) {
+          trace("update check: no version in download — ignored");
+          cleanupUpdateTmp();
+          return;
+        }
+        var remoteVer = m[1];
+        if (!versionNewer(remoteVer, SN_VERSION)) {
+          trace("update check: up to date (release has v" + remoteVer + ")");
+          markFirstRunDone(); // successful check; nothing to force later
+          cleanupUpdateTmp();
+          return;
+        }
+        updateRemote = { version: remoteVer, content: content };
+        if (isFirstRun()) {
+          trace("first launch on this machine: force-updating to v" + remoteVer);
+          doInstall(true);
+        } else {
+          trace("update available: v" + remoteVer + " — click the status bar");
+          try {
+            statusLbl.text = statusPrefix +
+              '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">' +
+              nb("New Update Available") + "</a>";
+          } catch (e1) {}
+        }
+      } catch (e) { trace("update processing error (" + e + ")"); }
+    }
+
+    function verifyInstalled(target) {
+      var check = readWholeFile(target);
+      if (!check || check.indexOf("function SyncNote") < 0) return false;
+      var m = check.match(/SN_VERSION\s*=\s*"([^"]+)"/);
+      return !!(m && m[1] === updateRemote.version);
+    }
+
+    function reportInstall(ok, isForced) {
+      if (ok) {
+        markFirstRunDone();
+        cleanupUpdateTmp();
+        trace("updated to v" + updateRemote.version + " — restart required");
+        try {
+          MessageBox.information(
+            (isForced ? "SyncNote updated itself to v" : "SyncNote updated to v") +
+            updateRemote.version +
+            ".\n\nRestart Harmony to load the new version.");
+        } catch (e) {}
+      } else {
+        trace("UPDATE FAILED: could not write the new version — install manually");
+        try {
+          MessageBox.information(
+            "The update could not be installed automatically.\n" +
+            "Please download the latest version manually.");
+        } catch (e) {}
+      }
+    }
+
+    function doInstall(isForced) {
+      if (!updateRemote) return;
+      var target = "";
+      try { target = String(specialFolders.userScripts) + "/SyncNote.js"; }
+      catch (e0) {}
+      if (!target) { trace("update install: no userScripts folder"); return; }
+
+      // Attempt 1: direct File write (cross-platform; unproven binding —
+      // the readback below is the arbiter, not the API's word).
+      try {
+        var f = new File(target);
+        f.open(2); // write mode
+        f.write(updateRemote.content);
+        f.close();
+      } catch (e1) { /* verified below */ }
+      if (verifyInstalled(target)) { reportInstall(true, isForced); return; }
+
+      // Attempt 2: OS copy of the already-verified temp file (Process2 is
+      // probe-proven), then re-verify after a beat.
+      trace("update install: File.write didn't verify — trying OS copy");
+      var copyCmd;
+      var win = false;
+      try { win = about.isWindowsArch(); } catch (e2) {}
+      if (win) {
+        copyCmd = 'cmd /c copy /Y "' + updateTmp.replace(/\//g, "\\") + '" "' +
+                  target.replace(/\//g, "\\") + '"';
+      } else {
+        copyCmd = 'cp -f "' + updateTmp + '" "' + target + '"';
+      }
+      try { new Process2(copyCmd).launch(); }
+      catch (e3) { reportInstall(false, isForced); return; }
+      var vt;
+      try { vt = new QTimer(dlg); } catch (e4) { vt = new QTimer(); }
+      g_snKeepAlivePanel.push(vt);
+      vt.singleShot = true;
+      vt.timeout.connect(function () {
+        reportInstall(verifyInstalled(target), isForced);
+      });
+      vt.start(2000);
+    }
+
+    function onUpdateClick() {
+      if (!updateRemote) return; // version text is plain unless one is pending
+      var d = new QDialog(dlg);
+      d.setWindowTitle("SyncNote Update");
+      d.minimumWidth = 320;
+      var v = new QVBoxLayout(d);
+      var lbl = new QLabel(
+        "Update SyncNote v" + SN_VERSION + " → v" + updateRemote.version + "?\n" +
+        "Harmony must be restarted afterward.");
+      lbl.wordWrap = true;
+      addW(v, lbl);
+      var rowW = new QWidget();
+      var row = new QHBoxLayout(rowW);
+      row.setContentsMargins(0, 0, 0, 0);
+      var okBtn = new QPushButton("Update");
+      try { okBtn.setProperty("default", true); } catch (e0) {}
+      okBtn.clicked.connect(function () { d.accept(); });
+      var noBtn = new QPushButton("Not Now");
+      try { noBtn.setProperty("autoDefault", false); } catch (e1) {}
+      noBtn.clicked.connect(function () { d.reject(); });
+      addW(row, okBtn);
+      addW(row, noBtn);
+      addW(v, rowW);
+      if (d.exec()) doInstall(false);
+    }
+    try { statusLbl.linkActivated.connect(onUpdateClick); } catch (e) {}
+
+    startUpdateCheck();
 
     // ---- save-on-close (v0.16.0, user decision: option A) ----
     // Closing the panel saves the scene so notes reach disk without anyone

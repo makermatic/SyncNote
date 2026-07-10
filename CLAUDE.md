@@ -51,6 +51,23 @@ your instincts disagree, the KB wins.
 - Window icon (`setWindowIcon`) doesn't render on Harmony 22 — retired; the
   guarded loader remains and traces to the Message Log if ever revisited.
 
+## Releases & the self-updater (v0.30.0+)
+
+- **`main` = development. `release` = teacher channel.** The script checks
+  `https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js`
+  at every launch (repo must stay PUBLIC or every teacher's updater breaks).
+- **Blessing flow:** Zack tests a build and blesses it → ASK HIM what version
+  number the release should carry (main's current or his custom pick; must be
+  incremental) → stamp if needed, merge/push to `release`. Never push to
+  `release` without his explicit blessing.
+- One version sequence across both branches — release simply lags main.
+- First install = Zack's Slack zip; all later updates via the in-panel
+  updater ("New Update Available" link in the status bar). First-ever launch
+  on a machine force-updates once (preferences flag).
+- Updater safety: downloads to a unique temp file, verifies content
+  (`function SyncNote` + parseable version) before installing; `curl -f`
+  writes nothing on HTTP errors. A failed check retries next launch.
+
 ## State / roadmap
 
 Current: **v0.29.0**, all features confirmed except where the KB says retired.
