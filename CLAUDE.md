@@ -67,6 +67,12 @@ your instincts disagree, the KB wins.
 - Updater safety: downloads to a unique temp file, verifies content
   (`function SyncNote` + parseable version) before installing; `curl -f`
   writes nothing on HTTP errors. A failed check retries next launch.
+- **After every push to `release`: verify the channel.** (1) Merging main
+  over a re-stamped release can keep BOTH version lines — the updater
+  parses the FIRST match, which silently masks the release. Check with
+  `grep -c 'SN_VERSION    ='` (must be exactly 1). (2) The raw URL is
+  CDN-cached ~5 min — verify via the commit-SHA raw URL immediately, or
+  wait before live-testing.
 
 ## State / roadmap
 
