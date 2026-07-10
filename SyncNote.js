@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.30.4";          // always auto-update; dialog = relaunch now or keep working
+  var SN_VERSION    = "0.30.6";          // update-dialog copy per user (no dash phrasing)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2106,8 +2106,8 @@ function SyncNote() {
           var lbl = new QLabel(
             "SyncNote has been updated.\n\n" +
             "v" + SN_VERSION + "  →  v" + updateRemote.version + "\n\n" +
-            "Relaunch SyncNote to use the new version, or keep working —\n" +
-            "this window stays on v" + SN_VERSION + " until relaunched.");
+            "Relaunch SyncNote to use the new version, or keep working.\n" +
+            "This window stays on v" + SN_VERSION + " until relaunched.");
           lbl.wordWrap = true;
           addW(v, lbl);
           var rowW = new QWidget();
