@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.29.0";          // custom title-bar icon, FILE-based (embed = the v0.28.1 breaker)
+  var SN_VERSION    = "0.29.1";          // note boxes paste as plain text (acceptRichText = false)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -1286,6 +1286,11 @@ function SyncNote() {
       var addRow = new QHBoxLayout(addRowW);
       addRow.setContentsMargins(0, 0, 0, 0);
       var input = new QTextEdit();
+      // Plain text only (v0.29.1): rich pastes (formatted text, images —
+      // one memorably included an entire YouTube card) otherwise render
+      // inside the box. Notes were always SAVED plain; now the box shows
+      // what will actually be kept.
+      try { input.acceptRichText = false; } catch (e) {}
       try { input.placeholderText = "Add a note…  (Enter = save, Shift+Enter = new line)"; }
       catch (e) { /* placeholder not bound in some engines; cosmetic */ }
       liveInputs[drawingName] = input;
@@ -1400,6 +1405,7 @@ function SyncNote() {
       addW(textCol, textLbl);
 
       var box = new QTextEdit(); // native = identical to the add box
+      try { box.acceptRichText = false; } catch (e) {} // plain pastes only (v0.29.1)
       box.plainText = (isEditingThis && editDraft !== null)
         ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
       sizeNoteInput(box);

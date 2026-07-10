@@ -788,6 +788,10 @@ Second attempt at the icon, on the agreed tier-1 route: **file-based, not embedd
 
 **RETIRED (2026-07-10): the icon does not render on Harmony 22** — the file-based loader ran but the title bar kept Harmony's default icon, and the user called it ("I genuinely give up"). Cause not diagnosed (the Message Log line — `window icon set from …` vs `not found` vs `could not set` — was never collected; plausible suspects: `setWindowIcon` inert on script dialogs, or Harmony's window manager overriding child-window icons). The guarded loader + installer PNG copy remain in place at zero cost: if a future Harmony honors it, it lights up on its own, and the trace line is the first thing to check if anyone ever reopens this.
 
+## 35. Implementation log — v0.29.1 (plain-text pastes)
+
+Rich clipboard content pasted into the note boxes rendered WITH formatting — images included (the reporting screenshot featured an entire YouTube card inside the add box). Saved notes were always plain (we only read `plainText`), so this was pure box-level WYSIWYG deception. Fix: `acceptRichText = false` on the add box and the edit box (the Copy All fallback box is read-only; not applicable). One property, canonical Qt solution, guarded.
+
 ## 33. Implementation log — v0.28.3/.4 (the padding saga, root-caused at last)
 
 **v0.28.3** finally tested the 24px bottom margin built in v0.27.3 — still wrong, but the failure screenshot held the answer: with 2/3/6-line notes side by side, **the gap eroded ~3-4px per line**. A missing constant shorts every card equally; per-line erosion means the label paints taller than it reports — **rich-text QLabels under-report wrapped height** (Qt defect; every note label is rich since v0.27.0's marker `<span>` wrap). This kills all flat-number fixes and also explains v0.27.2's failure (its `heightForWidth` fixup asked the same broken text engine that produced the bad hint).
