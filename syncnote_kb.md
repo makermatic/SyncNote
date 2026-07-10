@@ -779,6 +779,13 @@ None of the v0.27.1–.3 attempts satisfied the user, and Fable access ran out m
 
 Future idea parked by user (explicitly not now): bold/italic in notes. → *Superseded: marker tier in beta as of 2026-07-07 (§31).* Note for then: QLabel already renders rich text (the old link markup proved it), so display is easy — the hard part is the *editor* UX and storing markup in the model. Revisit only if students ask.
 
+## 34. Implementation log — v0.29.0 (custom title-bar icon, file-based)
+
+Second attempt at the icon, on the agreed tier-1 route: **file-based, not embedded** (the base64 embed is the proven v0.28.1 breaker — a ~10KB single-line string most plausibly choking the parser, since all the icon *calls* were guarded and couldn't have broken unrelated features).
+- `install.ps1` copies `_icon/_exports/Icon.png` → `SyncNote.png` beside the script in every Harmony folder (guarded by `Test-Path`; absence is never an error). The export PNG is committed so cloned repos install correctly; `Icon.ai`/working files stay untracked.
+- `buildDialog`: `specialFolders.userScripts + "/SyncNote.png"` → `QFileInfo.exists` (proven binding) → `dlg.setWindowIcon(new QIcon(path))`. First-use bindings: `specialFolders.userScripts`, `QIcon(path)`, `setWindowIcon` — each individually guarded and traced (`window icon set from …` / `not found` / `could not set`), so the Message Log names any failure and the cost is only the default icon.
+- Icon source is 266×298 (non-square); Qt scales for the ~16px title bar slot — if it renders squished/soft, a square padded export is the fix on the art side.
+
 ## 33. Implementation log — v0.28.3/.4 (the padding saga, root-caused at last)
 
 **v0.28.3** finally tested the 24px bottom margin built in v0.27.3 — still wrong, but the failure screenshot held the answer: with 2/3/6-line notes side by side, **the gap eroded ~3-4px per line**. A missing constant shorts every card equally; per-line erosion means the label paints taller than it reports — **rich-text QLabels under-report wrapped height** (Qt defect; every note label is rich since v0.27.0's marker `<span>` wrap). This kills all flat-number fixes and also explains v0.27.2's failure (its `heightForWidth` fixup asked the same broken text engine that produced the bad hint).

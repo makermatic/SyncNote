@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.28.6";          // padding saga retired (cause proven); 24px margin kept
+  var SN_VERSION    = "0.29.0";          // custom title-bar icon, FILE-based (embed = the v0.28.1 breaker)
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -938,6 +938,21 @@ function SyncNote() {
     dlg.setWindowTitle("SyncNote " + SN_VERSION + "  —  " + scene.currentScene());
     dlg.minimumWidth = 380;
     dlg.minimumHeight = 520;
+
+    // Custom title-bar icon (v0.29.0): install.ps1 puts SyncNote.png next
+    // to this script; specialFolders.userScripts is that folder for the
+    // running instance. FILE-based on purpose — the embedded-base64 route
+    // is what broke v0.28.1 (KB §32). Purely cosmetic: every failure path
+    // just leaves Harmony's default icon and says why in the Message Log.
+    try {
+      var iconPath = String(specialFolders.userScripts) + "/SyncNote.png";
+      if (new QFileInfo(iconPath).exists()) {
+        dlg.setWindowIcon(new QIcon(iconPath));
+        trace("window icon set from " + iconPath);
+      } else {
+        trace("window icon not found at " + iconPath);
+      }
+    } catch (e) { trace("could not set window icon (" + e + ")"); }
 
     var outer = new QVBoxLayout(dlg);
 
