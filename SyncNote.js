@@ -37,14 +37,10 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-<<<<<<< HEAD
-=======
-  var SN_VERSION    = "0.30.3";          // release stamp for the dialog-flow E2E test
->>>>>>> main
+  var SN_VERSION    = "0.30.4";          // always auto-update; dialog = relaunch now or keep working
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
-  var SN_FIRSTRUN_PREF = "SYNCNOTE_AUTOUPDATED_ONCE"; // machine-level, via preferences
   var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
@@ -2030,16 +2026,6 @@ function SyncNote() {
       } catch (e) { return null; }
     }
 
-    function markFirstRunDone() {
-      try { preferences.setString(SN_FIRSTRUN_PREF, "done"); } catch (e) {}
-    }
-
-    function isFirstRun() {
-      try {
-        return String(preferences.getString(SN_FIRSTRUN_PREF, "")) !== "done";
-      } catch (e) { return false; } // can't read prefs → never force
-    }
-
     function cleanupUpdateTmp() {
       try { new File(updateTmp).remove(); } catch (e) { /* temp junk */ }
     }
@@ -2068,7 +2054,7 @@ function SyncNote() {
       try {
         if (!(new QFileInfo(updateTmp).exists())) {
           trace("update check: no response (offline or channel unavailable) — will retry next launch");
-          return; // first-run flag deliberately left unset
+          return;
         }
         var content = readWholeFile(updateTmp);
         if (!content || content.indexOf("function SyncNote") < 0) {
@@ -2085,18 +2071,16 @@ function SyncNote() {
         var remoteVer = m[1];
         if (!versionNewer(remoteVer, SN_VERSION)) {
           trace("update check: up to date (release has v" + remoteVer + ")");
-          markFirstRunDone(); // successful check; nothing to force later
           cleanupUpdateTmp();
           return;
         }
+        // v0.30.4 (user design): ALWAYS auto-update — no ask, no first-run
+        // flag (whose preferences persistence proved unreliable across
+        // restarts anyway). The dialog afterward only offers WHEN to start
+        // using the new version: relaunch now, or finish on the old one.
         updateRemote = { version: remoteVer, content: content };
-        if (isFirstRun()) {
-          trace("first launch on this machine: force-updating to v" + remoteVer);
-          doInstall(true);
-        } else {
-          trace("update available: v" + remoteVer + " — offering the dialog");
-          promptUpdate(); // v0.30.2: dialog instead of a status-bar link
-        }
+        trace("newer release v" + remoteVer + " — auto-updating");
+        doInstall();
       } catch (e) { trace("update processing error (" + e + ")"); }
     }
 
@@ -2107,16 +2091,42 @@ function SyncNote() {
       return !!(m && m[1] === updateRemote.version);
     }
 
-    function reportInstall(ok, isForced) {
+    function reportInstall(ok) {
       if (ok) {
-        markFirstRunDone();
         cleanupUpdateTmp();
-        trace("updated to v" + updateRemote.version + " — restart required");
+        trace("updated to v" + updateRemote.version + " — relaunch to load it");
+        // Post-update choice (v0.30.4, user design): the update is already
+        // installed; the only question is when to start using it. Modal
+        // child dialog — Escape rejects only this dialog (= Keep Working).
         try {
-          MessageBox.information(
-            (isForced ? "SyncNote updated itself to v" : "SyncNote updated to v") +
-            updateRemote.version +
-            ".\n\nRestart Harmony to load the new version.");
+          var d = new QDialog(dlg);
+          d.setWindowTitle("SyncNote Update");
+          d.minimumWidth = 340;
+          var v = new QVBoxLayout(d);
+          var lbl = new QLabel(
+            "SyncNote has been updated.\n\n" +
+            "v" + SN_VERSION + "  →  v" + updateRemote.version + "\n\n" +
+            "Relaunch SyncNote to use the new version, or keep working —\n" +
+            "this window stays on v" + SN_VERSION + " until relaunched.");
+          lbl.wordWrap = true;
+          addW(v, lbl);
+          var rowW = new QWidget();
+          var row = new QHBoxLayout(rowW);
+          row.setContentsMargins(0, 0, 0, 0);
+          var closeBtn = new QPushButton("Close SyncNote");
+          try { closeBtn.setProperty("default", true); } catch (e0) {}
+          closeBtn.clicked.connect(function () { d.accept(); });
+          var laterBtn = new QPushButton("Keep Working");
+          try { laterBtn.setProperty("autoDefault", false); } catch (e1) {}
+          laterBtn.clicked.connect(function () { d.reject(); });
+          addW(row, closeBtn);
+          addW(row, laterBtn);
+          addW(v, rowW);
+          if (d.exec()) {
+            dlg.close(); // routes through save-on-close; relaunch = new version
+          } else {
+            trace("user kept the old version running for this session");
+          }
         } catch (e) {}
       } else {
         trace("UPDATE FAILED: could not write the new version — install manually");
@@ -2128,7 +2138,7 @@ function SyncNote() {
       }
     }
 
-    function doInstall(isForced) {
+    function doInstall() {
       if (!updateRemote) return;
       var target = "";
       try { target = String(specialFolders.userScripts) + "/SyncNote.js"; }
@@ -2143,7 +2153,7 @@ function SyncNote() {
         f.write(updateRemote.content);
         f.close();
       } catch (e1) { /* verified below */ }
-      if (verifyInstalled(target)) { reportInstall(true, isForced); return; }
+      if (verifyInstalled(target)) { reportInstall(true); return; }
 
       // Attempt 2: OS copy of the already-verified temp file (Process2 is
       // probe-proven), then re-verify after a beat.
@@ -2158,47 +2168,15 @@ function SyncNote() {
         copyCmd = 'cp -f "' + updateTmp + '" "' + target + '"';
       }
       try { new Process2(copyCmd).launch(); }
-      catch (e3) { reportInstall(false, isForced); return; }
+      catch (e3) { reportInstall(false); return; }
       var vt;
       try { vt = new QTimer(dlg); } catch (e4) { vt = new QTimer(); }
       g_snKeepAlivePanel.push(vt);
       vt.singleShot = true;
       vt.timeout.connect(function () {
-        reportInstall(verifyInstalled(target), isForced);
+        reportInstall(verifyInstalled(target));
       });
       vt.start(2000);
-    }
-
-    // Update offer (v0.30.2, user design after seeing the forced-update
-    // popup in action): a MODAL child dialog at launch when a newer
-    // release exists. Modal = Escape rejects only this dialog; the panel
-    // never sees the keypress (same mechanics as the Clear-all confirm).
-    // "Update Later" simply defers to the next launch's check.
-    function promptUpdate() {
-      if (!updateRemote) return;
-      var d = new QDialog(dlg);
-      d.setWindowTitle("SyncNote Update");
-      d.minimumWidth = 340;
-      var v = new QVBoxLayout(d);
-      var lbl = new QLabel(
-        "A new version is available. Would you like to update?\n\n" +
-        "v" + SN_VERSION + "  →  v" + updateRemote.version);
-      lbl.wordWrap = true;
-      addW(v, lbl);
-      var rowW = new QWidget();
-      var row = new QHBoxLayout(rowW);
-      row.setContentsMargins(0, 0, 0, 0);
-      var okBtn = new QPushButton("Update Now");
-      try { okBtn.setProperty("default", true); } catch (e0) {}
-      okBtn.clicked.connect(function () { d.accept(); });
-      var noBtn = new QPushButton("Update Later");
-      try { noBtn.setProperty("autoDefault", false); } catch (e1) {}
-      noBtn.clicked.connect(function () { d.reject(); });
-      addW(row, okBtn);
-      addW(row, noBtn);
-      addW(v, rowW);
-      if (d.exec()) doInstall(false);
-      else trace("update deferred by user — will offer again next launch");
     }
 
     startUpdateCheck();
