@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.30.7";          // icon code fully removed (setWindowIcon is unbound)
+  var SN_VERSION    = "0.31.0";          // FIRST BLESSED TEACHER RELEASE (2026-07-10)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
