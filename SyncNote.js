@@ -10,8 +10,9 @@
  *     substitution group has its own text field for adding dated notes.
  *   - Notes are stored INSIDE the scene (scene metadata), keyed by element ID +
  *     drawing name, so renaming the layer/scene never orphans them.
- *   - Clicking a note's green "Frame ####" link (or the group's Go-to button)
- *     jumps the playhead there, so you see the note and the artwork together.
+ *   - Clicking anywhere on a note card — its text, its background, or the
+ *     green "Frame ####" link — jumps the playhead there, so you see the
+ *     note and the artwork together (card-wide since v0.32.0).
  *
  * Compatibility: Harmony 22 and 24/25 Premium (Qt Script / ECMAScript).
  *
@@ -37,7 +38,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.31.4";          // BLESSED TEACHER RELEASE (2026-07-10)
+  var SN_VERSION    = "0.32.0";          // BLESSED TEACHER RELEASE (2026-07-13)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1026,6 +1027,10 @@ function SyncNote() {
     var editingNoteId = null; // note unlocked for in-place editing, or null
     var editDraft = null;     // mid-edit text captured across rebuilds
     var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
+    var clickJumpArmed = 0;   // click-jump filters armed this refresh
+    var lastJumpMs = 0;       // one jump per click — a click bubbles
+                              // through nested cards, so card+group filters
+                              // can both see the same release event
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -1073,9 +1078,13 @@ function SyncNote() {
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
 
+      clickJumpArmed = 0; // recounted as the cards below arm their filters
       var groups = collectGroups(layer, model);
       for (var i = 0; i < groups.length; i++) {
         addW(listLayout, makeGroupWidget(groups[i]));
+      }
+      if (clickJumpArmed > 0) {
+        trace("click-jump: " + clickJumpArmed + " filter(s) armed");
       }
       if (groups.length === 0) {
         var hint = new QLabel("No notes yet.\nMove the playhead and click “Add Note”.");
@@ -1231,8 +1240,9 @@ function SyncNote() {
       // timeline fields (v0.26.0 user spec); the range shows first & last
       // exposed frame, clicking always jumps to the first. Plus, when the
       // group has NO notes, a remove button that deletes the sub itself.
-      // Link-based navigation is deliberate: card-wide click filters felt
-      // unreliable (user call, v0.8.3) — links are native QLabel behavior.
+      // Links stay as-is; v0.32.0 also revived card-wide click-to-jump
+      // (v0.8.x; the old flakiness was the GC bug, fixed by pinning) —
+      // see armClickJump near makeEnterFilter.
       var headRowW = new QWidget();
       var headRow = new QHBoxLayout(headRowW);
       headRow.setContentsMargins(0, 0, 0, 0);
@@ -1360,6 +1370,21 @@ function SyncNote() {
           prevAddText = t;
         } catch (e) { /* typing must never break */ }
       });
+
+      // ---- click-to-jump (v0.32.0): the group card's background jumps too.
+      // The add box, buttons, and links consume their own clicks (Qt
+      // propagation), so they're exempt by construction.
+      if (frameNo > 0) {
+        armClickJump(box, drawingName, frameNo, null, null);
+        // The header label stretches across the whole top strip and (as a
+        // link-bearing QLabel) consumes clicks even BESIDE the link text —
+        // they never bubble to the card filter. Arm it directly; a click
+        // right on the link double-fires harmlessly (same jump target).
+        armClickJump(head, drawingName, frameNo, null, null);
+        try { box.cursor = new QCursor(Qt.PointingHandCursor); } catch (e) {}
+        setArrowCursor(noteBtn);
+        if (notes.length === 0) setArrowCursor(rmBtn);
+      }
 
       return box;
     }
@@ -1567,6 +1592,20 @@ function SyncNote() {
       addW(rightCol, new QWidget(), 1);
       addW(h, rightColW);
 
+      // ---- click-to-jump (v0.32.0): the whole note card is a jump target.
+      // ✕/✎/○ and the editor consume their own clicks, so they're exempt.
+      // The text label is SELECTION-AWARE: a plain click jumps, a drag-
+      // select keeps working and never jumps (checked at mouse release).
+      if (frameNo > 0) {
+        armClickJump(card, drawingName, frameNo, note.id, null);
+        armClickJump(meta, drawingName, frameNo, note.id, null);
+        armClickJump(textLbl, drawingName, frameNo, note.id, textLbl);
+        try { card.cursor = new QCursor(Qt.PointingHandCursor); } catch (e) {}
+        setArrowCursor(delBtn);
+        setArrowCursor(editBtn);
+        setArrowCursor(doneBtn);
+      }
+
       return card;
     }
 
@@ -1738,6 +1777,82 @@ function SyncNote() {
         return f;
       } catch (e) {
         return null;
+      }
+    }
+
+    // ---- click-to-jump (v0.32.0 — revival of v0.8.x) --------------------
+    // History: the v0.8.x "clicks randomly die" bug was the GC collecting
+    // filter wrappers, fixed then (and doctrine ever since) by keep-alive
+    // pinning. What made the feature FEEL unreliable was the patchwork:
+    // selectable text consumed its clicks while the background jumped.
+    // This build arms the text label too — selection-aware, so dragging
+    // to select never jumps but a plain click does.
+    //
+    // Filters NEVER consume the event (return false always): buttons,
+    // links, text selection, and the editor keep their native behavior;
+    // we only listen. Acting on mouse RELEASE (a click's end) lets the
+    // selection check see the drag's result.
+    function armClickJump(w, dn, shownFrame, noteId, selLabel) {
+      var f = makeClickJumpFilter(dn, shownFrame, noteId, selLabel);
+      if (!f) return;
+      try { w.installEventFilter(f); clickJumpArmed++; } catch (e) {}
+    }
+
+    // Children with no explicit cursor INHERIT the card's pointing hand
+    // (Qt cursor inheritance) — buttons should keep the default arrow.
+    function setArrowCursor(w) {
+      try { w.cursor = new QCursor(Qt.ArrowCursor); } catch (e) {}
+    }
+
+    function makeClickJumpFilter(dn, shownFrame, noteId, selLabel) {
+      try {
+        var f = new QObject(dlg);
+        f.eventFilter = function (watched, event) {
+          try {
+            // Numeric fallbacks (v0.8.1 hardening): QEvent/Qt enums may be
+            // unbound on some engines; MouseButtonRelease is 3, LeftButton
+            // is 1 in every Qt.
+            var t = -1;
+            try { t = Number(event.type()); } catch (e0) { return false; }
+            var rel = 3;
+            try { rel = Number(QEvent.MouseButtonRelease) || 3; } catch (e1) {}
+            if (t !== rel) return false;
+            try {
+              var left = 1;
+              try { left = Number(Qt.LeftButton) || 1; } catch (e2) {}
+              if (Number(event.button()) !== left) return false;
+            } catch (e3) { /* button unreadable: assume left click */ }
+            if (noteId !== null && editingNoteId === noteId) {
+              return false; // never yank the playhead mid-edit
+            }
+            if (selLabel) {
+              var sel = true; // unreadable state = assume selecting (no jump)
+              try {
+                sel = selLabel.hasSelectedText;
+                if (typeof sel === "function") sel = selLabel.hasSelectedText();
+                sel = (sel === true);
+              } catch (e4) { sel = true; }
+              if (sel) {
+                trace("click-jump: skipped — text selection active");
+                return false;
+              }
+            }
+            // One jump per physical click: the release bubbles through
+            // nested cards (note card -> group card), so sibling filters
+            // may see the same event within the same instant.
+            var nowMs = (new Date()).getTime();
+            if (nowMs - lastJumpMs < 200) return false;
+            lastJumpMs = nowMs;
+            trace("click-jump: Sub " + dn + " via " +
+                  (selLabel ? "note text" : "card"));
+            makeJumpToSub(dn, shownFrame)();
+          } catch (e) { /* clicking must never break the panel */ }
+          return false; // never consume — we only listen
+        };
+        g_snKeepAlive.push(f); // pin or GC kills the override (v0.8.2 lesson)
+        return f;
+      } catch (e) {
+        return null; // engine can't build filters: links still navigate
       }
     }
 

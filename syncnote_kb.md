@@ -801,6 +801,8 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 
 **Release-process gotchas (caught during Phase-2 setup):** (1) merging main into a re-stamped release kept BOTH `SN_VERSION` lines (adjacent-edit merge, no conflict raised) — at runtime the later `var` wins but the updater's regex takes the FIRST match, so clients would compare against the stale number and never see updates. Post-push check: `grep -c 'SN_VERSION    ='` on the raw channel must equal exactly 1. (2) raw.githubusercontent.com caches ~5 min — verify pushes via the commit-SHA raw URL.
 
+**SECOND BLESSING — v0.31.4 (2026-07-10):** carries the minimal dimmed "Add note…" placeholder and open-at-minimum-width. First blessing to reach teachers via the UPDATER rather than a zip: everyone on 0.31.0/0.31.1 gets the auto-update dialog on next launch. Ritual ran clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, one version line, fix present).
+
 ## 37. Replies — built, never tested, SCRAPPED by choice (2026-07-10)
 
 A full reply system was designed and built as v0.32.0-beta, then scrapped before testing — not for technical reasons but product judgment: *"I don't actually need a reason to have a reply system. If someone asks for it, let's come back to it."* The complete implementation survives at commit `1ee44ee` (branch deleted; the SHA may eventually GC on GitHub, so the design is summarized here for cheap revival):
