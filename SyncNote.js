@@ -38,7 +38,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.32.0";          // BLESSED TEACHER RELEASE (2026-07-13)
+  var SN_VERSION    = "0.33.0";          // span-aware frame headers (2026-07-13)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -819,10 +819,14 @@ function SyncNote() {
     } catch (e) { /* caller's undo accum still closes */ }
   }
 
-  // One pass over the whole Notes column: first AND last exposed frame per
-  // drawing (v0.26.0) — cheaper than the old per-drawing scans, and the
-  // last frame feeds the "Frame 42 - 43" range headers + the staleness
-  // signature (so exposure-length changes auto-refresh the panel).
+  // One pass over the whole Notes column: per drawing, a LIST of contiguous
+  // exposure SPANS [{first,last},…] (v0.33.0). The old single {first,last}
+  // pair was blind to gaps: a sub re-exposed later collapsed into one fake
+  // range ("Frame 69 - 87" for 69-73 + 87) or a two-single-frame sub read
+  // as continuous ("Frame 90 - 100" for 90 + 100). A gap — any frame not
+  // showing the drawing — now starts a new span, feeding the "Frame 69 -
+  // 73 & 87" headers, the scrub stops, and the staleness signature (so
+  // re-exposure drags auto-refresh the panel too).
   function exposureMap(colName) {
     var map = {};
     var n = frame.numberOf();
@@ -830,14 +834,31 @@ function SyncNote() {
       var d = "";
       try { d = column.getEntry(colName, 1, f); } catch (e) { continue; }
       if (!d || d === "") continue;
-      if (!map[d]) map[d] = { first: f, last: f };
-      else map[d].last = f;
+      var spans = map[d];
+      if (!spans) { map[d] = [{ first: f, last: f }]; continue; }
+      var cur = spans[spans.length - 1];
+      if (f === cur.last + 1) cur.last = f;   // still contiguous: extend
+      else spans.push({ first: f, last: f }); // gap: a new span begins
     }
     return map;
   }
 
+  // Render a span list for headers / Copy All: "42", "42 - 43",
+  // "69 - 73 & 87", "90 & 100" — no zero-padding, single frames as bare
+  // numbers, spans joined with " & " (v0.33.0 user spec).
+  function spanText(spans) {
+    var parts = [];
+    for (var i = 0; i < (spans ? spans.length : 0); i++) {
+      parts.push(spans[i].first === spans[i].last
+        ? String(spans[i].first)
+        : spans[i].first + " - " + spans[i].last);
+    }
+    return parts.join(" & ");
+  }
+
   // Every drawing in the element, plus any drawing that has notes, each
-  // with its first/last exposed frames (-1 if not currently exposed).
+  // with its exposure spans and first exposed frame (-1 if not exposed).
+  // `frame` (the first span's start) stays the sort key and jump target.
   function collectGroups(layer, model) {
     var seen = {};
     var groups = [];
@@ -848,11 +869,11 @@ function SyncNote() {
       var dn = timings[i];
       if (seen[dn]) continue;
       seen[dn] = true;
-      var e1 = exp[dn];
+      var s1 = exp[dn];
       // A drawing with no exposure AND no notes carries no information —
       // hide it instead of cluttering the list with "(not exposed)" cards.
-      if (!e1 && notesFor(model, layer.elementId, dn).length === 0) continue;
-      groups.push({ drawing: dn, frame: e1 ? e1.first : -1, last: e1 ? e1.last : -1 });
+      if (!s1 && notesFor(model, layer.elementId, dn).length === 0) continue;
+      groups.push({ drawing: dn, frame: s1 ? s1[0].first : -1, spans: s1 || [] });
     }
 
     var byEl = model.notesByDrawing[String(layer.elementId)] || {};
@@ -860,8 +881,8 @@ function SyncNote() {
       if (!byEl.hasOwnProperty(key) || seen[key]) continue;
       if (!byEl[key] || byEl[key].length === 0) continue; // no actual notes
       seen[key] = true;
-      var e2 = exp[key];
-      groups.push({ drawing: key, frame: e2 ? e2.first : -1, last: e2 ? e2.last : -1 });
+      var s2 = exp[key];
+      groups.push({ drawing: key, frame: s2 ? s2[0].first : -1, spans: s2 || [] });
     }
 
     groups.sort(function (a, b) {
@@ -1037,8 +1058,8 @@ function SyncNote() {
       var groups = collectGroups(layer, model);
       var parts = [];
       for (var i = 0; i < groups.length; i++) {
-        // first AND last: exposure-length changes must read as stale too
-        parts.push(groups[i].drawing + ":" + groups[i].frame + "-" + groups[i].last);
+        // ALL spans: length changes AND re-exposure drags must read stale
+        parts.push(groups[i].drawing + ":" + spanText(groups[i].spans));
       }
       return parts.join("|");
     }
@@ -1189,10 +1210,15 @@ function SyncNote() {
         var hasPrev = false;
         var hasNext = false;
         for (var i = 0; i < groups.length; i++) {
-          var g = groups[i].frame;
-          if (g <= 0) continue;
-          if (g < f) hasPrev = true;
-          if (g > f) hasNext = true;
+          // EVERY span start is a scrub stop (v0.33.0), matching
+          // scrubToNoteFrame — the two must never disagree.
+          var spans = groups[i].spans || [];
+          for (var s = 0; s < spans.length; s++) {
+            var g = spans[s].first;
+            if (g <= 0) continue;
+            if (g < f) hasPrev = true;
+            if (g > f) hasNext = true;
+          }
           if (hasPrev && hasNext) break;
         }
         prevBtn.enabled = hasPrev;
@@ -1226,7 +1252,6 @@ function SyncNote() {
     function makeGroupWidget(group) {
       var drawingName = group.drawing;
       var frameNo = group.frame;
-      var lastNo = group.last;
 
       var box = new QFrame();
       box.frameShape = QFrame.StyledPanel;
@@ -1235,11 +1260,12 @@ function SyncNote() {
 
       var notes = notesFor(model, layer.elementId, drawingName);
 
-      // Header row: green clickable "Frame 42" / "Frame 42 - 43" link —
-      // plain numbers with no zero-padding, matching Harmony's own
-      // timeline fields (v0.26.0 user spec); the range shows first & last
-      // exposed frame, clicking always jumps to the first. Plus, when the
-      // group has NO notes, a remove button that deletes the sub itself.
+      // Header row: green clickable "Frame 42" / "Frame 42 - 43" /
+      // "Frame 69 - 73 & 87" link — plain numbers with no zero-padding,
+      // matching Harmony's own timeline fields (v0.26.0 user spec); every
+      // contiguous exposure span is listed (v0.33.0), clicking always
+      // jumps to the first. Plus, when the group has NO notes, a remove
+      // button that deletes the sub itself.
       // Links stay as-is; v0.32.0 also revived card-wide click-to-jump
       // (v0.8.x; the old flakiness was the GC bug, fixed by pinning) —
       // see armClickJump near makeEnterFilter.
@@ -1247,8 +1273,7 @@ function SyncNote() {
       var headRow = new QHBoxLayout(headRowW);
       headRow.setContentsMargins(0, 0, 0, 0);
       if (frameNo > 0) {
-        var frameText = "Frame " + frameNo +
-                        (lastNo > frameNo ? " - " + lastNo : "");
+        var frameText = "Frame " + spanText(group.spans);
         var head = new QLabel(
           '<a href="#" style="' + LINK_STYLE + ' font-weight:bold;">' +
           frameText + "</a>");
@@ -1864,16 +1889,21 @@ function SyncNote() {
 
     // Scrub the playhead between note frames, anchored to wherever the
     // playhead currently is (frames recomputed live so new subs count).
+    // EVERY exposure span's start is a stop (v0.33.0, user spec): a sub
+    // re-exposed at frame 87 is a review location in its own right.
     function scrubToNoteFrame(dir) {
       var f = frame.current();
       var groups = collectGroups(layer, model);
       var best = -1;
       var bestDrawing = "";
       for (var i = 0; i < groups.length; i++) {
-        var g = groups[i].frame;
-        if (g <= 0) continue;
-        if (dir > 0 && g > f && (best < 0 || g < best)) { best = g; bestDrawing = groups[i].drawing; }
-        if (dir < 0 && g < f && (best < 0 || g > best)) { best = g; bestDrawing = groups[i].drawing; }
+        var spans = groups[i].spans || [];
+        for (var s = 0; s < spans.length; s++) {
+          var g = spans[s].first;
+          if (g <= 0) continue;
+          if (dir > 0 && g > f && (best < 0 || g < best)) { best = g; bestDrawing = groups[i].drawing; }
+          if (dir < 0 && g < f && (best < 0 || g > best)) { best = g; bestDrawing = groups[i].drawing; }
+        }
       }
       if (best > 0) { // no next/prev note: do nothing
         frame.setCurrent(best);
@@ -1985,7 +2015,7 @@ function SyncNote() {
         if (notes.length === 0) continue;
         lines.push("");
         lines.push((g.frame > 0
-                     ? "Frame " + g.frame + (g.last > g.frame ? " - " + g.last : "")
+                     ? "Frame " + spanText(g.spans)
                      : "(not exposed)") +
                    "  (Sub " + g.drawing + ")");
         for (var j = 0; j < notes.length; j++) {
