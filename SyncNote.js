@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.31.2";          // minimal dimmed add-note placeholder
+  var SN_VERSION    = "0.31.3";          // panel opens at minimum width
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2209,6 +2209,11 @@ function SyncNote() {
     });
 
     refresh();
+    // Open AT the minimum width (v0.31.3): Qt otherwise opens new windows
+    // at the content's size hint, which is wider than our minimum — so the
+    // status bar wrapped differently on a fresh open vs. after the user
+    // nudged the edge to the true minimum. Guarded: failure = hint sizing.
+    try { dlg.resize(dlg.minimumWidth, 560); } catch (e) {}
     dlg.show();
     dlg.raise();
     dlg.activateWindow();
