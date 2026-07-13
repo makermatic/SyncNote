@@ -25,9 +25,12 @@ your instincts disagree, the KB wins.
   Verify APIs against the official docs AND working scripts on his machine
   (`%APPDATA%/Toon Boom Animation/**`, incl. openHarmony) before using them.
 - **Plan before UI changes**; small rollback-friendly iterations, committed and
-  pushed per version. Risky features go on a branch as a separate
-  `SyncNoteBeta.js` (toolbar function `SyncNoteBeta`) for side-by-side testing,
-  folded into `SyncNote.js` on approval.
+  pushed per version. Risky features ship as a separate `SyncNoteBeta.js`
+  (toolbar function `SyncNoteBeta`) for side-by-side testing, folded into
+  `SyncNote.js` on approval. **No beta branches** (Zack's call, 2026-07-10) —
+  the beta file lives on main. CONSEQUENCE: never bless/merge to `release`
+  while `SyncNoteBeta.js` exists on main — fold it or delete it first, or the
+  beta file ships to the public channel.
 - **Instrument before theorizing**: add Message Log traces and ask for the log
   line rather than stacking blind fixes. Failed experiments get retired with a
   written cause (see KB §33), not endless retries.
