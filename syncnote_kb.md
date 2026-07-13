@@ -803,6 +803,14 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 
 **SECOND BLESSING — v0.31.4 (2026-07-10):** carries the minimal dimmed "Add note…" placeholder and open-at-minimum-width. First blessing to reach teachers via the UPDATER rather than a zip: everyone on 0.31.0/0.31.1 gets the auto-update dialog on next launch. Ritual ran clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, one version line, fix present).
 
+## 39. Span-aware exposure model — v0.33.0, SHIPPED + BLESSED (2026-07-13)
+
+Zack found `exposureMap`'s blind spot the same day 0.32.0 shipped: it stored one `{first, last}` pair per drawing, blind to gaps. Two faces of the same bug: a sub on 69-73 re-exposed at 87 rendered "Frame 69 - 87" (the re-exposure invisible as its own location), and a sub on single frames 90 + 100 rendered "Frame 90 - 100" (two dots masquerading as a range).
+
+**Fix:** `exposureMap` returns a LIST of contiguous spans per drawing (a gap starts a new span); new `spanText()` renders "69 - 73 & 87" / "90 & 100" (bare numbers for single frames, " & " separator — Zack's spec). Consumers updated in lockstep: headers, Copy All, the staleness signature (now sees re-exposure drags — previously invisible edits, prime suspect for a reported-once "dialog vanished" incident, unreproduced), and BOTH scrub functions (every span start is a ◀/▶ stop — `updateScrubButtons` and `scrubToNoteFrame` must stay identical or button state lies). Jump targets still go to the FIRST span; notes stay bound to the sub (one card per sub, however many spans). Single-span subs behave pixel-identically to before.
+
+**FOURTH BLESSING — v0.33.0 (2026-07-13):** confirmed working same-day ("everything from subtext to arrows works exactly as you intended"); shipped directly on main, no beta (display-layer change). Ritual clean: guard → stamp → `-X theirs` merge → single-version-line check → SHA-pinned verification (HTTP 200, 105597 bytes, one version line, spanText present). Same-day double blessing with v0.32.0.
+
 ## 38. Click-to-jump revival — v0.32.0, SHIPPED + BLESSED (2026-07-13)
 
 The v0.8.x card-wide click navigation, retired then by feel ("felt unreliable", v0.8.3), revived at Zack's request and confirmed working in one beta cycle. The historical bug (filters GC'd per-card) was already fixed in v0.8.2 by keep-alive pinning — the revival mostly had to fix what made the WORKING version feel broken: the card was a patchwork of bubbling/non-bubbling zones.
