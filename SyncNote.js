@@ -37,7 +37,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.31.0";          // FIRST BLESSED TEACHER RELEASE (2026-07-10)
+  var SN_VERSION    = "0.31.2";          // minimal dimmed add-note placeholder
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1286,8 +1286,22 @@ function SyncNote() {
       // inside the box. Notes were always SAVED plain; now the box shows
       // what will actually be kept.
       try { input.acceptRichText = false; } catch (e) {}
-      try { input.placeholderText = "Add a note…  (Enter = save, Shift+Enter = new line)"; }
+      // Minimal placeholder (v0.31.2): the Enter/Shift+Enter tutorial has
+      // done its job — everyone knows the keys now, and the long hint
+      // bloated every group card.
+      try { input.placeholderText = "Add note…"; }
       catch (e) { /* placeholder not bound in some engines; cosmetic */ }
+      // Dim the placeholder (SyncSketch-style: a hint shouldn't compete
+      // with real notes). Placeholder color lives in a PALETTE slot, not
+      // stylesheets — programmatic set, unproven binding, fully guarded:
+      // worst case the placeholder keeps its default brightness.
+      try {
+        var pal = input.palette;
+        var dim = new QColor(110, 110, 110);
+        try { pal.setColor(QPalette.PlaceholderText, dim); }
+        catch (e0) { pal.setColor(20, dim); } // 20 = PlaceholderText role id
+        input.palette = pal;
+      } catch (e) { trace("placeholder dim not supported (" + e + ")"); }
       liveInputs[drawingName] = input;
       if (drafts[drawingName]) { // restore text an auto-refresh interrupted
         try { input.plainText = drafts[drawingName]; } catch (e) {}
