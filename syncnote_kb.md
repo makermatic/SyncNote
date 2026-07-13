@@ -803,6 +803,24 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 
 **SECOND BLESSING — v0.31.4 (2026-07-10):** carries the minimal dimmed "Add note…" placeholder and open-at-minimum-width. First blessing to reach teachers via the UPDATER rather than a zip: everyone on 0.31.0/0.31.1 gets the auto-update dialog on next launch. Ritual ran clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, one version line, fix present).
 
+## 38. Click-to-jump revival — v0.32.0, SHIPPED + BLESSED (2026-07-13)
+
+The v0.8.x card-wide click navigation, retired then by feel ("felt unreliable", v0.8.3), revived at Zack's request and confirmed working in one beta cycle. The historical bug (filters GC'd per-card) was already fixed in v0.8.2 by keep-alive pinning — the revival mostly had to fix what made the WORKING version feel broken: the card was a patchwork of bubbling/non-bubbling zones.
+
+**Design (armClickJump / makeClickJumpFilter, inside buildDialog):**
+- Filters listen for MouseButtonRelease (numeric fallback 3; LeftButton fallback 1 — v0.8.1 hardening) and **NEVER consume the event** (`return false` always): buttons, links, selection, and the editor keep native behavior; worst case is a no-op, never breakage.
+- Armed per note card: the QFrame, the meta label, and the text label; per group card: the QFrame **and the header label** (see gotcha). Jump target recomputed at click time via the existing `makeJumpToSub` (self-healing stale displays for free).
+- **Selection-aware text (option C):** the text label's filter checks `QLabel.hasSelectedText` at release — drag-select never jumps, a plain click does. Unreadable binding degrades to "text clicks only select" (it read fine on Harmony 22).
+- `lastJumpMs` 200 ms dedupe: one physical click bubbles through nested cards (note card → group card), so sibling filters can see the same release.
+- Mid-edit guard: clicks on the note being edited never move the playhead.
+- Diagnostics: `click-jump: N filter(s) armed` per refresh; every landed jump and selection-skip traced.
+
+**Gotchas for the ledger:**
+1. **A link-bearing QLabel consumes clicks even BESIDE its link text.** The green "Frame 42" header stretches across the whole strip (stretch 1), so clicks in the empty area next to it died silently — never bubbling to the card filter. Fix: arm the label itself (double-fire with linkActivated is harmless — same idempotent jump, deduped).
+2. **Qt cursor inheritance:** children with no explicit cursor inherit the parent's. Setting PointingHandCursor on cards turned every button's cursor into a hand — fixed with explicit ArrowCursor on all five buttons (`setArrowCursor`). Both `QCursor(Qt.PointingHandCursor)` and `Qt.ArrowCursor` bind fine on Harmony 22.
+
+**THIRD BLESSING — v0.32.0 (2026-07-13):** beta folded into SyncNote.js, SyncNoteBeta.js deleted from main + script folders (the guard), Zack picked 0.32.0. Ritual clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, 104151 bytes, one version line, armClickJump present). Teachers on 0.31.x auto-update on next launch. First run of the branch-less beta playbook (KB §37) — worked exactly as designed.
+
 ## 37. Replies — built, never tested, SCRAPPED by choice (2026-07-10)
 
 A full reply system was designed and built as v0.32.0-beta, then scrapped before testing — not for technical reasons but product judgment: *"I don't actually need a reason to have a reply system. If someone asks for it, let's come back to it."* The complete implementation survives at commit `1ee44ee` (branch deleted; the SHA may eventually GC on GitHub, so the design is summarized here for cheap revival):
