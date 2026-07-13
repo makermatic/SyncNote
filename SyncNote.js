@@ -38,7 +38,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.33.0";          // span-aware frame headers (2026-07-13)
+  var SN_VERSION    = "0.33.0";          // BLESSED TEACHER RELEASE (2026-07-13)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
