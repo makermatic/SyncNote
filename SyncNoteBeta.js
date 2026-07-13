@@ -39,7 +39,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.32.0-beta.1";   // CLICK-TO-JUMP BETA (2026-07-13)
+  var SN_VERSION    = "0.32.0-beta.2";   // CLICK-TO-JUMP BETA (2026-07-13)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1377,7 +1377,14 @@ function SyncNoteBeta() {
       // propagation), so they're exempt by construction.
       if (frameNo > 0) {
         armClickJump(box, drawingName, frameNo, null, null);
+        // The header label stretches across the whole top strip and (as a
+        // link-bearing QLabel) consumes clicks even BESIDE the link text —
+        // they never bubble to the card filter. Arm it directly; a click
+        // right on the link double-fires harmlessly (same jump target).
+        armClickJump(head, drawingName, frameNo, null, null);
         try { box.cursor = new QCursor(Qt.PointingHandCursor); } catch (e) {}
+        setArrowCursor(noteBtn);
+        if (notes.length === 0) setArrowCursor(rmBtn);
       }
 
       return box;
@@ -1595,6 +1602,9 @@ function SyncNoteBeta() {
         armClickJump(meta, drawingName, frameNo, note.id, null);
         armClickJump(textLbl, drawingName, frameNo, note.id, textLbl);
         try { card.cursor = new QCursor(Qt.PointingHandCursor); } catch (e) {}
+        setArrowCursor(delBtn);
+        setArrowCursor(editBtn);
+        setArrowCursor(doneBtn);
       }
 
       return card;
@@ -1787,6 +1797,12 @@ function SyncNoteBeta() {
       var f = makeClickJumpFilter(dn, shownFrame, noteId, selLabel);
       if (!f) return;
       try { w.installEventFilter(f); clickJumpArmed++; } catch (e) {}
+    }
+
+    // Children with no explicit cursor INHERIT the card's pointing hand
+    // (Qt cursor inheritance) — buttons should keep the default arrow.
+    function setArrowCursor(w) {
+      try { w.cursor = new QCursor(Qt.ArrowCursor); } catch (e) {}
     }
 
     function makeClickJumpFilter(dn, shownFrame, noteId, selLabel) {
