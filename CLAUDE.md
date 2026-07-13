@@ -80,8 +80,11 @@ your instincts disagree, the KB wins.
 
 ## State / roadmap
 
-Current: **v0.29.0**, all features confirmed except where the KB says retired.
+Current: **v0.32.0**, blessed to `release` 2026-07-13 (third blessing) — main
+and release aligned. Newest feature: card-wide click-to-jump (KB §38;
+selection-aware note text, header-label and cursor-inheritance gotchas
+recorded there). All features confirmed except where the KB says retired.
 Open items: student README + install guide (never started), teacher
-save-confirmation prompt (designed, KB §25.1), bold/italic already shipped as
-`**markers**`. Notes persist only when the scene saves (mitigated by
-save-on-close — do not "fix" further; Zack's decision).
+save-confirmation prompt (designed, KB §25.1), replies revival only if asked
+(KB §37), eventual v1.0 for wider release. Notes persist only when the scene
+saves (mitigated by save-on-close — do not "fix" further; Zack's decision).
