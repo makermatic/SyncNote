@@ -151,6 +151,14 @@ installer/*.command  text eol=lf
   pointed at a fake tree → same results; no-folders path and pause-detection
   both verified. NOT yet run on a real Mac or via real double-click —
   see below.
-- **PENDING:** Zack real-machine Windows test (browser download + double
-  click); real-Mac test of the one-liner and the .command alternative;
+- **2026-07-21 (build 1.0.0, Zack, real Windows machine): CONFIRMED** — ran
+  the .bat for real, "seemed fine". His feedback also corrected the README's
+  toolbar instructions: the real path is right-click on any main toolbar →
+  **Scripting** (shows the Scripting toolbar, add the script from there) or
+  right-click → **Customize** (find and add the script directly). The
+  original "Windows → Toolbars → Scripting" menu path was wrong — README
+  fixed same day.
+- **PENDING:** real-Mac test of the one-liner and the .command alternative
+  (Zack has no easy Mac access — may have to be verified by the first Mac
+  teacher/student, with the README's troubleshooting as the safety net);
   post-blessing raw-URL byte checks on the `release` `.bat`.

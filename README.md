@@ -72,15 +72,17 @@ one-liner above is easier.
 
 1. **Restart Harmony** (close it fully and open it again — Harmony only
    loads scripts at startup).
-2. Make sure the Scripting toolbar is visible: **Windows → Toolbars →
-   Scripting** (yes, the menu is called "Windows" on Mac too).
-3. On the Scripting toolbar, click **Manage Scripts** (the wrench icon).
-4. In the left list, select **SyncNote.js**; in the middle list, select the
-   **SyncNote** function; then click the **▶ (Add script to toolbar)**
-   button and close the dialog.
-5. Click the new SyncNote button on the Scripting toolbar — the panel opens.
+2. **Right-click on any of the main toolbars** at the top of Harmony.
+   From there, either way works:
+   - **Way 1 — Scripting toolbar:** click **Scripting** in the list — the
+     Scripting toolbar appears. On it, click **Manage Scripts**, pick
+     **SyncNote.js**, then the **SyncNote** function, and add it to the
+     toolbar.
+   - **Way 2 — Customize:** click **Customize**, find the SyncNote script
+     in the list, and add it.
+3. Click the new SyncNote button — the panel opens.
 
-> 📷 *Screenshots to add: Scripting toolbar menu, Manage Scripts dialog,
+> 📷 *Screenshots to add: the right-click toolbar menu, adding the script,
 > the SyncNote button.*
 
 ## Updates
