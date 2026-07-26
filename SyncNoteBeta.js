@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.5";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.6";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2035,6 +2035,40 @@ function SyncNoteBeta() {
     // before the event bubbles here) — that click means "jump", never
     // "add". (Panel-lifetime: host and dlg survive refreshes.)
     try {
+      // Press fallback (beta.6): Zack's logs proved Harmony sometimes
+      // delivers a background click's PRESS but never its RELEASE
+      // (press–press–silence in the bottom region), so release-only
+      // triggering lost those clicks. Every background press arms a
+      // 250 ms timer; if no release, jump, or add follows, the press
+      // itself completes the click. Presses that bubbled up from a card
+      // are safe: their release fires the jump, and the timer sees
+      // lastJumpMs move and stands down.
+      var pressTimer = null;
+      var pressAt = 0;
+      function schedulePressFallback(ms) {
+        pressAt = ms;
+        try {
+          if (!pressTimer) {
+            try { pressTimer = new QTimer(dlg); }
+            catch (e0) { pressTimer = new QTimer(); }
+            pressTimer.singleShot = true;
+            pressTimer.timeout.connect(function () {
+              try {
+                if (snMode !== "auto") return;
+                if (lastAutoMs >= pressAt || lastJumpMs >= pressAt) return;
+                lastAutoMs = (new Date()).getTime();
+                trace("auto click: release never delivered — adding via " +
+                      "press fallback");
+                autoAddAtPlayhead();
+              } catch (e) {}
+            });
+            g_snKeepAlivePanel.push(pressTimer);
+          }
+          pressTimer.stop();
+          pressTimer.start(250);
+        } catch (e) { /* release path still active */ }
+      }
+
       var autoF = new QObject(dlg);
       autoF.eventFilter = function (watched, event) {
         try {
@@ -2045,6 +2079,12 @@ function SyncNoteBeta() {
           try { rel = Number(QEvent.MouseButtonRelease) || 3; } catch (e1) {}
           var prs = 2;
           try { prs = Number(QEvent.MouseButtonPress) || 2; } catch (e1b) {}
+          if (t !== rel && t !== prs) return false;
+          try {
+            var left = 1;
+            try { left = Number(Qt.LeftButton) || 1; } catch (e2) {}
+            if (Number(event.button()) !== left) return false; // left only
+          } catch (e3) { /* button unreadable: assume left */ }
           // beta.4 diagnostics: log the pipeline so a dead click shows
           // WHERE it died (no press = event never delivered; press but no
           // release = release eaten; guard lines = skipped on purpose).
@@ -2053,17 +2093,12 @@ function SyncNoteBeta() {
                   : (watched === bottomW) ? "bottom strip"
                   : (watched === toolbarW) ? "toolbar"
                   : "dlg";
-          if (t === prs) { trace("auto click: press on " + who); return false; }
-          if (t !== rel) return false;
-          try {
-            var left = 1;
-            try { left = Number(Qt.LeftButton) || 1; } catch (e2) {}
-            if (Number(event.button()) !== left) {
-              trace("auto click: non-left release on " + who + " — ignored");
-              return false;
-            }
-          } catch (e3) { /* button unreadable: assume left */ }
           var nowMs = (new Date()).getTime();
+          if (t === prs) {
+            trace("auto click: press on " + who);
+            schedulePressFallback(nowMs);
+            return false;
+          }
           if (nowMs - lastJumpMs < 300) {
             trace("auto click: release on " + who + " — skipped (jump claimed it)");
             return false;
@@ -2104,6 +2139,10 @@ function SyncNoteBeta() {
     // failure = title bar stays add-deaf, everything else unaffected.
     var titleWarned = false;
     function maybeTitleBarAdd() {
+      // Geometry test in its own try (beta.6): the add call used to live
+      // inside it too, so a refresh error was mislabeled "title-bar
+      // detection unavailable" AND aborted the add midway.
+      var inTitle = false;
       try {
         var p = QCursor.pos();
         var px = (typeof p.x === "function") ? p.x() : p.x;
@@ -2120,19 +2159,20 @@ function SyncNoteBeta() {
         var cT = rv(g, "y");        // client top = below the title bar
         trace("activate: cursor=(" + px + "," + py + ") frameTop=" + fT +
               " clientTop=" + cT + " x-range=" + fX + ".." + fR);
-        if (px >= fX && px <= fR && py >= fT && py < cT) {
-          var nowMs = (new Date()).getTime();
-          if (nowMs - lastAutoMs < 300) return;
-          lastAutoMs = nowMs;
-          trace("auto mode: title-bar re-entry — note prompt");
-          autoAddAtPlayhead();
-        }
+        inTitle = (px >= fX && px <= fR && py >= fT && py < cT);
       } catch (e) {
         if (!titleWarned) {
           titleWarned = true;
           trace("auto mode: title-bar detection unavailable (" + e + ")");
         }
+        return;
       }
+      if (!inTitle) return;
+      var nowMs = (new Date()).getTime();
+      if (nowMs - lastAutoMs < 300) return;
+      lastAutoMs = nowMs;
+      trace("auto mode: title-bar re-entry — note prompt");
+      autoAddAtPlayhead();
     }
 
     // Window watcher: DEACTIVATE abandons an empty prompt (spec: leaving
@@ -2661,15 +2701,28 @@ function SyncNoteBeta() {
   // =======================================================================
   // UTILITIES
   // =======================================================================
+  // Every step guarded (beta.6): a single already-deleted widget in the
+  // layout used to throw ("cannot access member 'hide' of deleted
+  // QObject") and ABORT the whole teardown mid-refresh — the list stayed
+  // half-built and the post-refresh scroll/focus never ran. One dead
+  // widget must never cost the rest of the rebuild.
   function clearLayout(layout) {
     if (!layout) return;
-    var item = layout.takeAt(0);
+    var item = null;
+    try { item = layout.takeAt(0); } catch (e) { return; }
     while (item) {
-      var w = item.widget();
-      if (w) { w.hide(); w.deleteLater(); }
-      var child = item.layout();
-      if (child) clearLayout(child);
-      item = layout.takeAt(0);
+      try {
+        var w = item.widget();
+        if (w) {
+          try { w.hide(); } catch (eH) { /* already deleted: fine */ }
+          try { w.deleteLater(); } catch (eD) {}
+        }
+      } catch (e0) {}
+      try {
+        var child = item.layout();
+        if (child) clearLayout(child);
+      } catch (e1) {}
+      try { item = layout.takeAt(0); } catch (e2) { item = null; }
     }
   }
 
