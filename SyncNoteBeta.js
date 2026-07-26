@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.2";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.3";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2056,26 +2056,71 @@ function SyncNoteBeta() {
             "button still works");
     }
 
-    // Spec: leaving the window abandons an empty prompt. Guarded first-use
-    // binding — if WindowDeactivate never arrives on this engine, the
-    // playhead-move cleanup in the staleness timer covers the workflow.
+    // Title-bar re-entry (beta.3): the OS owns the title bar — its clicks
+    // never reach Qt on ANY engine, so no filter can hear them. Geometry
+    // is the side door: when the window ACTIVATES in Auto Mode and the
+    // cursor sits in the title band (inside the frame, above the client
+    // area), the activation click was the title bar — treat it as an add.
+    // Known quirk, accepted: grabbing an INACTIVE panel's title bar to
+    // drag it also adds (the empty prompt self-cleans on the next
+    // deactivate/playhead move). All bindings first-use and guarded —
+    // failure = title bar stays add-deaf, everything else unaffected.
+    var titleWarned = false;
+    function maybeTitleBarAdd() {
+      try {
+        var p = QCursor.pos();
+        var px = (typeof p.x === "function") ? p.x() : p.x;
+        var py = (typeof p.y === "function") ? p.y() : p.y;
+        function rv(r, name) { // QRect members bind as props OR functions
+          var v = r[name];
+          return Number((typeof v === "function") ? r[name]() : v);
+        }
+        var fg = dlg.frameGeometry; // window incl. decorations
+        var g = dlg.geometry;       // client area only
+        var fX = rv(fg, "x");
+        var fT = rv(fg, "y");
+        var fR = fX + rv(fg, "width");
+        var cT = rv(g, "y");        // client top = below the title bar
+        if (px >= fX && px <= fR && py >= fT && py < cT) {
+          var nowMs = (new Date()).getTime();
+          if (nowMs - lastAutoMs < 300) return;
+          lastAutoMs = nowMs;
+          trace("auto mode: title-bar re-entry — note prompt");
+          autoAddAtPlayhead();
+        }
+      } catch (e) {
+        if (!titleWarned) {
+          titleWarned = true;
+          trace("auto mode: title-bar detection unavailable (" + e + ")");
+        }
+      }
+    }
+
+    // Window watcher: DEACTIVATE abandons an empty prompt (spec: leaving
+    // the window = never mind); ACTIVATE runs the title-bar check above.
+    // Guarded first-use bindings — if these events never arrive on this
+    // engine, the playhead-move cleanup in the staleness timer remains.
     try {
-      var deactF = new QObject(dlg);
-      deactF.eventFilter = function (watched, event) {
+      var winF = new QObject(dlg);
+      winF.eventFilter = function (watched, event) {
         try {
           var t = -1;
           try { t = Number(event.type()); } catch (e0) { return false; }
           var dea = 25;
           try { dea = Number(QEvent.WindowDeactivate) || 25; } catch (e1) {}
+          var act = 24;
+          try { act = Number(QEvent.WindowActivate) || 24; } catch (e2) {}
           if (t === dea && autoPending) {
             trace("auto mode: window deactivated with an empty prompt");
             cleanupPendingAuto();
+          } else if (t === act && snMode === "auto") {
+            maybeTitleBarAdd();
           }
         } catch (e) {}
         return false;
       };
-      dlg.installEventFilter(deactF);
-      g_snKeepAlivePanel.push(deactF);
+      dlg.installEventFilter(winF);
+      g_snKeepAlivePanel.push(winF);
     } catch (e) { /* lazy cleanup paths remain */ }
 
     addBtn.clicked.connect(function () {
