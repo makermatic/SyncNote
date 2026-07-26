@@ -45,7 +45,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.4";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.5";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1638,13 +1638,20 @@ function SyncNoteBeta() {
       // explicitText (optional): the text to save, bypassing input.plainText
       // — the textChanged path passes the text as it was BEFORE the Enter's
       // newline was inserted, so the stray line break never persists.
+      var lastCommitMs = 0;
       function commit(explicitText) {
+        // One save per gesture: the Add button fires this from BOTH
+        // pressed and clicked (see below), so a real release must not
+        // double-save. Also a re-entrancy guard against very fast adds.
+        var nowMs = (new Date()).getTime();
+        if (nowMs - lastCommitMs < 400) return;
         var txt = (explicitText !== undefined) ? explicitText : "";
         if (explicitText === undefined) {
           try { txt = String(input.plainText); } catch (e) {}
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
+        lastCommitMs = nowMs;
         // Empty the box first so the draft-stash can't re-save the
         // committed text; everything heavy runs on the next event-loop
         // turn, outside this signal. Breadcrumb traces (beta.2): if a
@@ -1661,6 +1668,12 @@ function SyncNoteBeta() {
           crumb("commit[add]: refresh done");
         });
       }
+      // Save on PRESS, not just click (v0.35.0): Harmony sometimes never
+      // delivers a button's mouse RELEASE (the §40 quirk that forced the
+      // background-click press fallback), and `clicked` requires
+      // press+release — so Add-button saves were silently lost while
+      // Enter still worked. Both signals are wired; commit() dedupes.
+      try { noteBtn.pressed.connect(function () { commit(); }); } catch (e) {}
       noteBtn.clicked.connect(function () { commit(); });
 
       // Enter handling, primary path: event filter (consumes the key).
@@ -2295,13 +2308,17 @@ function SyncNoteBeta() {
       addW(row, noteBtn);
       addW(v, rowW);
 
+      var lastVCommitMs = 0;
       function commitVirtual(explicitText) {
+        var nowMs = (new Date()).getTime(); // one save per gesture
+        if (nowMs - lastVCommitMs < 400) return;
         var txt = (explicitText !== undefined) ? explicitText : "";
         if (explicitText === undefined) {
           try { txt = String(input.plainText); } catch (e) {}
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
+        lastVCommitMs = nowMs;
         // The sub is born at COMMIT time, not prompt time — and (beta.2)
         // on the NEXT event-loop turn: ensureSubstitutionAtFrame does
         // real scene surgery (undo accum, Drawing.create, column write),
@@ -2326,6 +2343,9 @@ function SyncNoteBeta() {
           crumb("commit[auto]: focus done");
         });
       }
+      // Press AND click (see the group add box): a lost mouse release
+      // must not swallow the save. commitVirtual dedupes.
+      try { noteBtn.pressed.connect(function () { commitVirtual(); }); } catch (e) {}
       noteBtn.clicked.connect(function () { commitVirtual(); });
 
       var kf = makeEnterFilter(function () { commitVirtual(); });
@@ -2685,14 +2705,22 @@ function SyncNoteBeta() {
     // documented landmine: DO NOT install app-level event filters.
     // History in KB §40; the removed code is at commit 7be1378.
 
-    addBtn.clicked.connect(function () {
+    // Toolbar Add Note: press + click for the same lost-release reason,
+    // deduped so one gesture makes one sub.
+    var lastAddBtnMs = 0;
+    function addNoteAtPlayhead() {
+      var nowMs = (new Date()).getTime();
+      if (nowMs - lastAddBtnMs < 400) return;
+      lastAddBtnMs = nowMs;
       var f = frame.current();
       var drawingName = ensureSubstitutionAtFrame(layer, f);
       if (drawingName) {
         refresh(drawingName); // scroll to + flash the new group
-        focusAddInput(drawingName); // cursor ready in both modes (v0.34.0)
+        focusAddInput(drawingName); // cursor ready in every mode
       }
-    });
+    }
+    try { addBtn.pressed.connect(addNoteAtPlayhead); } catch (e) {}
+    addBtn.clicked.connect(addNoteAtPlayhead);
 
     // Scrub the playhead between note frames, anchored to wherever the
     // playhead currently is (frames recomputed live so new subs count).
