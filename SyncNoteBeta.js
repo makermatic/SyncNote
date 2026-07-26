@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.1";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.2";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2015,11 +2015,16 @@ function SyncNoteBeta() {
       } catch (e) { /* first grab already did its best */ }
     }
 
-    // Background-click filter on the list host (panel-lifetime: the host
-    // widget survives refreshes, only its children are rebuilt). A click
-    // that any card claimed set lastJumpMs microseconds ago (child filters
-    // run before the event bubbles here) — that click means "jump", never
-    // "add".
+    // Background-click filter, installed on BOTH the list host and the
+    // dialog itself (beta.2): a click nothing interactive claims bubbles
+    // up to whichever of the two owns that region — list interior to the
+    // host, everything else (toolbar gaps, bottom strip, window margins)
+    // to the dialog. beta.1 only listened on the host, so the add-surface
+    // shrank to the space below the cards as the list filled. Both can
+    // see the same bubbled click; lastAutoMs makes it one add. A click a
+    // card claimed set lastJumpMs microseconds ago (child filters run
+    // before the event bubbles here) — that click means "jump", never
+    // "add". (Panel-lifetime: host and dlg survive refreshes.)
     try {
       var autoF = new QObject(dlg);
       autoF.eventFilter = function (watched, event) {
@@ -2044,6 +2049,7 @@ function SyncNoteBeta() {
         return false; // never consume — we only listen
       };
       host.installEventFilter(autoF);
+      try { dlg.installEventFilter(autoF); } catch (e9) {}
       g_snKeepAlivePanel.push(autoF);
     } catch (e) {
       trace("auto mode: click filter unavailable (" + e + ") — Add Note " +
