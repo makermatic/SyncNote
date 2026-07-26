@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.13";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.14";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2325,10 +2325,39 @@ function SyncNoteBeta() {
     // cockpit, and from then on type→Enter→scrub-keys→type loops with
     // zero further clicks. Uses focusGroup, whose RETRIED scrolls
     // (now/60ms/250ms) survive post-rebuild garbage geometry.
+    // True when the card is entirely inside the viewport — the anti-jank
+    // gate (beta.14): a 1-3 frame scrub usually leaves the prompt already
+    // on screen, and pinning it to the top anyway (with the 60/250 ms
+    // re-aims) read as jitter. Misjudgment is safe either way: "not
+    // visible" falls back to the old scroll, "visible" just skips it.
+    function groupFullyVisible(w) {
+      try {
+        try { listLayout.activate(); } catch (e9) {}
+        var y = 0;
+        try { y = (typeof w.pos.y === "function") ? w.pos.y() : w.pos.y; }
+        catch (e0) { y = Number(w.y) || 0; }
+        var h = 0;
+        try { h = Number(w.height) || 0; } catch (e1) {}
+        if (h <= 0) return false;
+        var sb = scroll.verticalScrollBar();
+        var top = Number(sb.value);
+        var viewH = 0;
+        try { viewH = Number(scroll.viewport().height) || 0; }
+        catch (e2) { try { viewH = Number(scroll.height) || 0; } catch (e3) {} }
+        if (viewH <= 0) return false;
+        return (y >= top && (y + h) <= top + viewH);
+      } catch (e) { return false; }
+    }
+
     function focusPrompt() {
       if (snMode !== "auto") return;
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
-      try { focusGroup(key); } catch (e) {}
+      var w = liveGroups[key];
+      if (w && groupFullyVisible(w)) {
+        try { highlightGroup(key); } catch (e) {} // on screen: flash, no yank
+      } else {
+        try { focusGroup(key); } catch (e) {}
+      }
       if (SN_AUTO_FOCUS !== "steal") return;
       var active = false;
       try {
