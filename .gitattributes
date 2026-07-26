@@ -1,2 +1,8 @@
 # Auto detect text files and perform LF normalization
 * text=auto
+
+# Installer files are served byte-for-byte via raw.githubusercontent.com to
+# end users — line endings in the BLOB are load-bearing (see installer_kb.md).
+# The .bat must be CRLF in the repo itself: -text disables all normalization.
+installer/*.bat      -text
+installer/*.command  text eol=lf

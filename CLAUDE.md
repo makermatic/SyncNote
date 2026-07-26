@@ -19,7 +19,7 @@ your instincts disagree, the KB wins.
   of which build Zack is testing. Harmony loads scripts at startup: he must
   restart Harmony after every deploy.
 - A PostToolUse hook auto-runs `install.ps1` whenever `SyncNote.js` is edited
-  (copies script + icon to all Harmony script folders). Editing `install.ps1`
+  (copies the script to all Harmony script folders). Editing `install.ps1`
   alone does NOT fire it — run it manually then.
 - Say **"deployed, please test"** — never "fixed" — until Zack confirms in-app.
   Verify APIs against the official docs AND working scripts on his machine
@@ -65,9 +65,9 @@ your instincts disagree, the KB wins.
   incremental) → stamp if needed, merge/push to `release`. Never push to
   `release` without his explicit blessing.
 - One version sequence across both branches — release simply lags main.
-- First install = Zack's Slack zip; all later updates via the in-panel
-  updater ("New Update Available" link in the status bar). First-ever launch
-  on a machine force-updates once (preferences flag).
+- First install = the `installer/` web installers (see next section); all
+  later updates via the in-panel updater, which silently auto-installs any
+  newer release at panel launch.
 - Updater safety: downloads to a unique temp file, verifies content
   (`function SyncNote` + parseable version) before installing; `curl -f`
   writes nothing on HTTP errors. A failed check retries next launch.
@@ -78,13 +78,36 @@ your instincts disagree, the KB wins.
   CDN-cached ~5 min — verify via the commit-SHA raw URL immediately, or
   wait before live-testing.
 
+## Installer (first install; v1.0.0, 2026-07-17)
+
+- **`installer_kb.md` is required reading before touching anything in
+  `installer/` or `README.md`.** It is the installer's own KB, separate from
+  `syncnote_kb.md` on purpose.
+- `installer/Install-SyncNote.bat` (Windows, double-click) and
+  `installer/Install-SyncNote.command` (Mac; Terminal one-liner is the
+  primary path) are **web installers**: they download the current `release`
+  `SyncNote.js` at run time, so the installer files never go stale.
+- All public links (README, Slack canvas) point at the **`release`** branch.
+  Installer changes reach students only with the next blessing — never
+  hot-push `release` outside the blessing ritual.
+- Bump **`INST_VERSION`** in BOTH scripts on any installer change (it is
+  independent of `SN_VERSION`); keep the two scripts functionally mirrored.
+- The `.gitattributes` rules for `installer/` are load-bearing (the git blob
+  is what students execute; the `.bat` must stay CRLF). Details in
+  `installer_kb.md` §5.
+- `install.ps1` stays a dev-only deploy tool — never link it to students.
+
 ## State / roadmap
 
-Current: **v0.32.0**, blessed to `release` 2026-07-13 (third blessing) — main
-and release aligned. Newest feature: card-wide click-to-jump (KB §38;
-selection-aware note text, header-label and cursor-inheritance gotchas
-recorded there). All features confirmed except where the KB says retired.
-Open items: student README + install guide (never started), teacher
+Current: **v0.33.0**, blessed to `release` 2026-07-13 (fourth blessing) — main
+and release aligned. Newest: span-aware exposure model (KB §39 — headers like
+"Frame 69 - 73 & 87", every re-exposure a scrub stop) and card-wide
+click-to-jump (KB §38; selection-aware note text, header-label and
+cursor-inheritance gotchas recorded there). All features confirmed except
+where the KB says retired.
+First-install installer + student README shipped 2026-07-17 (installer v1.0.0,
+awaiting Zack's real-machine tests; see installer_kb.md §8).
+Open items: teacher
 save-confirmation prompt (designed, KB §25.1), replies revival only if asked
 (KB §37), eventual v1.0 for wider release. Notes persist only when the scene
 saves (mitigated by save-on-close — do not "fix" further; Zack's decision).
