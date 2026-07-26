@@ -42,7 +42,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.1";          // scrub-chars fix (2026-07-26)
+  var SN_VERSION    = "0.34.5";          // node deletion deletes notes (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -201,45 +201,23 @@ function SyncNote() {
     var found = findNotesLayer(model);
     if (found) return found;
 
-    // Recovery: the READ node may have been deleted while the element +
-    // column (and all their notes) survive in the scene. Rebuild just the
-    // node instead of orphaning the old notes with a brand-new element.
+    // The Notes NODE is gone: deleting the node DELETES ITS NOTES (user
+    // decision, 2026-07-26 — replaces the original rebuild-and-recover
+    // behavior, which resurrected notes from scene metadata and made
+    // node deletion feel broken). Discard the old element's notes and
+    // start fresh. CAVEAT: once the scene saves, this purge has no undo.
     if (model && model.syncNoteElementId >= 0) {
-      var col = findColumnByElementId(model.syncNoteElementId);
-      if (col) {
-        var rebuilt = createReadNodeFor(col, model.syncNoteElementId);
-        if (rebuilt) return rebuilt;
-      }
+      try {
+        var eid = String(model.syncNoteElementId);
+        if (model.notesByDrawing[eid]) {
+          delete model.notesByDrawing[eid];
+          saveModel(model);
+          trace("Notes node was deleted — its notes were discarded");
+        }
+      } catch (e) { /* worst case: stale notes linger in metadata */ }
+      model.syncNoteElementId = -1;
     }
     return createNotesLayer();
-  }
-
-  // Scan all columns for a DRAWING column bound to the given element ID.
-  function findColumnByElementId(eid) {
-    try {
-      var n = column.numberOf();
-      for (var i = 0; i < n; i++) {
-        var name = column.getName(i);
-        if (column.type(name) === "DRAWING" &&
-            column.getElementIdOfDrawing(name) === eid) return name;
-      }
-    } catch (e) { /* fall through */ }
-    return "";
-  }
-
-  // Create just a READ node and link it to an existing column.
-  function createReadNodeFor(colName, elementId) {
-    scene.beginUndoRedoAccum("SyncNote: rebuild Notes node");
-    try {
-      var readPath = node.add(node.root(), uniqueNodeName(LAYER_NAME), "READ", 0, 0, 0);
-      if (!readPath || node.type(readPath) !== "READ") throw "node.add failed";
-      node.linkAttr(readPath, "DRAWING.ELEMENT", colName);
-      scene.endUndoRedoAccum();
-      return { node: readPath, column: colName, elementId: elementId };
-    } catch (e) {
-      scene.endUndoRedoAccum();
-      return null;
-    }
   }
 
   // node.add fails (returns "") if a sibling by that name exists; probe.
