@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.17";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.18";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2003,6 +2003,17 @@ function SyncNoteBeta() {
           try {
             if (event.type() === QEvent.KeyPress) {
               var k = event.key();
+              // Two-stage Escape (v0.34.0 user spec): the first Escape
+              // leaves the BOX (focus drops, panel stays); a second
+              // Escape, with no box focused, closes the panel as always.
+              var esc = 16777216;
+              try { esc = Number(Qt.Key_Escape) || 16777216; } catch (eE) {}
+              if (k === esc) {
+                try { watched.clearFocus(); }
+                catch (e0) { try { dlg.setFocus(); } catch (e1) {} }
+                trace("Escape — left the text box (panel stays open)");
+                return true; // consumed: the dialog must not see this one
+              }
               if (k === Qt.Key_Return || k === Qt.Key_Enter) {
                 if (event.modifiers() & Qt.ShiftModifier) {
                   trace("Shift+Enter via key filter — newline"); // diagnostics
@@ -2281,6 +2292,15 @@ function SyncNoteBeta() {
             try { kp = Number(QEvent.KeyPress) || 6; } catch (e0b) {}
             if (et === kp) {
               var k = event.key();
+              // Two-stage Escape, same contract as makeEnterFilter.
+              var esc = 16777216;
+              try { esc = Number(Qt.Key_Escape) || 16777216; } catch (eE) {}
+              if (k === esc) {
+                try { input.clearFocus(); }
+                catch (eF0) { try { dlg.setFocus(); } catch (eF1) {} }
+                trace("Escape — left the prompt box (panel stays open)");
+                return true;
+              }
               if (k === Qt.Key_Return || k === Qt.Key_Enter) {
                 if (event.modifiers() & Qt.ShiftModifier) return false;
                 commitFn();
