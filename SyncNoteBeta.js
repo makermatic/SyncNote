@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.12";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.13";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2194,10 +2194,11 @@ function SyncNoteBeta() {
         try { input.plainText = ""; } catch (e) {}
         trace("auto: note committed at frame " + vf + " (sub " + dn + ")");
         refresh(dn);
-        // Hand the keyboard back to Harmony so its shortcuts work again.
-        if (SN_AUTO_FOCUS === "steal") {
-          try { var mw = mainWindow(); if (mw) mw.activateWindow(); } catch (e) {}
-        }
+        // Stay in the cockpit (beta.13): our window is active (the user
+        // just typed here), so focus flows into the next prompt's box —
+        // type → Enter → scrub keys → type, zero clicks. (The old
+        // hand-back-to-Harmony broke exactly this loop.)
+        focusPrompt();
       }
       noteBtn.clicked.connect(function () { commitVirtual(); });
 
@@ -2314,23 +2315,32 @@ function SyncNoteBeta() {
       return true;
     }
 
-    // Scroll to + flash the prompt and (policy "steal") move the keyboard
-    // into its box — skipped while a mouse button is down, so a timeline
-    // drag is never interrupted mid-hold. Uses focusGroup, whose RETRIED
-    // scrolls (now/60ms/250ms) survive the post-rebuild window where card
-    // positions are still garbage — a one-shot scroll stops short on long
-    // jumps (the 82→4 bug).
+    // Scroll to + flash the prompt; move the keyboard into its box ONLY
+    // when SyncNote's window is already the active one. beta.12's logs
+    // proved that stealing activation while the user works in Harmony is
+    // an unwinnable OS fight (focus IN → OUT within 4 ms, every time —
+    // Windows protects the foreground window). So: scrubbing from the
+    // timeline shows the prompt without touching the keyboard; ONE click
+    // anywhere on the panel (or any window activation) enters the
+    // cockpit, and from then on type→Enter→scrub-keys→type loops with
+    // zero further clicks. Uses focusGroup, whose RETRIED scrolls
+    // (now/60ms/250ms) survive post-rebuild garbage geometry.
     function focusPrompt() {
       if (snMode !== "auto") return;
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
       try { focusGroup(key); } catch (e) {}
       if (SN_AUTO_FOCUS !== "steal") return;
+      var active = false;
+      try {
+        active = (typeof dlg.isActiveWindow === "function")
+          ? dlg.isActiveWindow() : (dlg.isActiveWindow === true);
+      } catch (e) { active = false; }
+      if (!active) return; // never fight the OS for activation
       try {
         var mb = 0;
         try { mb = Number(QApplication.mouseButtons()); } catch (e0) {}
-        if (mb) return; // mid-drag: show the prompt, don't steal
+        if (mb) return; // mid-drag: show the prompt, don't grab
       } catch (e) {}
-      try { dlg.activateWindow(); } catch (e) {}
       if (promptTargetDrawing) {
         focusAddInput(promptTargetDrawing);
       } else if (liveVirtualInput) {
