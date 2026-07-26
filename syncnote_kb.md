@@ -803,7 +803,7 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 
 **SECOND BLESSING — v0.31.4 (2026-07-10):** carries the minimal dimmed "Add note…" placeholder and open-at-minimum-width. First blessing to reach teachers via the UPDATER rather than a zip: everyone on 0.31.0/0.31.1 gets the auto-update dialog on next launch. Ritual ran clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, one version line, fix present).
 
-## 40. Auto Mode — v0.34.0-beta series, IN PROGRESS (2026-07-26)
+## 40. Three modes (Manual / Hybrid / Auto) — v0.34.0, SHIPPED + BLESSED (2026-07-26)
 
 Create-phase de-clunking: a Manual/Auto toggle (clickable status-strip label, hover-white state machine); in Auto, any click on a non-interactive part of the window creates a note prompt at the playhead with the input focused, and an untouched prompt self-deletes (launch-sweep AND-rule). Confirmed working through beta.9. **ROLLBACK POINT: beta.9 = commit 0a74a7a** — click-triggered Auto Mode, fully functional.
 
@@ -820,7 +820,14 @@ Hard-won findings (each cost a beta):
 
 **CROSS-PLATFORM NOTE (2026-07-26, untestable locally — Zack has no Mac):** everything in the Auto Mode builds is plain Qt (numeric-fallback key codes, QTimer, activateWindow, QCursor.pos) — nothing Windows-only by construction. Known platform difference: **macOS does not deliver the window-activating click to the widget under it** (Windows does), so Hybrid's click-on-re-entry may cost Mac users one extra click, and the press/release delivery quirks may differ. Auto v2 (frame-change-driven, no clicks) is the Mac-friendliest mode. First Mac tester feedback should check: Hybrid re-entry clicks, title-bar detection, scrub-key passthrough.
 
-**PLANNED v2 (user direction, 2026-07-26):** clicking in and out of the panel is still clunky — the prompt should follow the TIMELINE: on debounced currentFrameChanged in Auto Mode, render a **VIRTUAL prompt card** at the playhead frame (no sub created — the sub is created only when the note is committed). This DELETES the entire empty-prompt cleanup subsystem by design (nothing exists to clean up), makes scrubbing free of scene writes/undo pollution, and reuses the proven notifier + refresh machinery. Open question at time of writing: focus policy (steal focus to the prompt box on frame settle vs. prompt-visible-but-focus-stays-in-Harmony).
+**SHIPPED as THREE modes (user design mid-build): Manual = classic; Hybrid = the v1 click-to-add above; Auto = v2 playhead-follow.** Auto's virtual prompt card renders at the debounce-settled playhead frame; the sub is created ONLY at commit (scrubbing writes nothing; abandonment costs nothing; Hybrid keeps the v1 cleanup subsystem). Auto findings, each log-proven:
+- **Focus-stealing while the user works in Harmony is an unwinnable OS fight** (focus IN → OUT in 4 ms — Windows foreground protection). Final design: focus moves into the prompt only when SyncNote is already the active window; one click/activation enters the "cockpit", then type→Enter→scrub-keys→type loops clicklessly. An EMPTY prompt box passes , . < > and arrow keys through as real frame steps (keyboard scrubbing survives); each step re-grabs focus 50 ms later (`frame.setCurrent` can pull it).
+- **Key autorepeat's ~500 ms warm-up outlives the 300 ms staleness debounce** — a rebuild mid-hold destroys the focused box and kills the held key. Rebuilds are deferred while scrub keys fire (<700 ms); the prompt appears on pause (also the wanted UX).
+- **In-place prompt moves**: when the prompt keeps its slot between the same neighbors, only the header label is rewritten (a scrub session had shown seventeen ~40 ms full rebuilds in a row — the "blink"). Structure changes still full-refresh. Anti-jank: no scroll when the card is already fully visible.
+- The prompt card wears a PERSISTENT white border (own objectName, exempt from the 2.5 s flash machinery) — it marks where the prompt lives.
+- **ENGINE FACT (Harmony 22): script event filters receive mouse and focus events but NOT key events** — why Enter always saves via the textChanged fallback. Escape-behavior work (two-stage escape, beta.18/.19) was removed as over-engineering (user call); close-layer interception (reject() override + rejected re-show net) is at commit 511c083 if ever wanted.
+
+**FIFTH BLESSING — v0.34.0 (2026-07-26):** 19-beta cycle folded and blessed same-day. Ritual clean: guard → stamp → `-X theirs` merge → single-version-line check → SHA-pinned verification (HTTP 200, 142475 bytes, one version line, makeVirtualCard present, updater re-enabled). This blessing also carries the installer v1.0.0 + student README to the release branch for the first time. Teachers on 0.30.0+ auto-update on next launch.
 
 ## 39. Span-aware exposure model — v0.33.0, SHIPPED + BLESSED (2026-07-13)
 

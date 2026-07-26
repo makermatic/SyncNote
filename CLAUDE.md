@@ -99,12 +99,15 @@ your instincts disagree, the KB wins.
 
 ## State / roadmap
 
-Current: **v0.33.0**, blessed to `release` 2026-07-13 (fourth blessing) — main
-and release aligned. Newest: span-aware exposure model (KB §39 — headers like
-"Frame 69 - 73 & 87", every re-exposure a scrub stop) and card-wide
-click-to-jump (KB §38; selection-aware note text, header-label and
-cursor-inheritance gotchas recorded there). All features confirmed except
-where the KB says retired.
+Current: **v0.34.0**, blessed to `release` 2026-07-26 (fifth blessing) — main
+and release aligned; this blessing also put the installer + README on the
+release branch for the first time. Newest: THREE note-adding modes (KB §40 —
+Manual / Hybrid click-to-add / Auto playhead-following virtual prompt; the
+§40 engine facts are required reading: key events never reach script
+filters, app-level event filters CRASH Harmony, focus-stealing loses to the
+OS). Perf: full-rebuild-per-add is linear (~7 ms/group, baseline in §40);
+refresh timing trace stays in until optimized. All features confirmed
+except where the KB says retired.
 First-install installer + student README shipped 2026-07-17 (installer v1.0.0,
 awaiting Zack's real-machine tests; see installer_kb.md §8).
 Open items: teacher
