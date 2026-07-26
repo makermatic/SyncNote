@@ -45,7 +45,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.7";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.8";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2013,10 +2013,15 @@ function SyncNoteBeta() {
         // clicking a card to jump left no visible trace of where you are.
         selectedDrawing = dn;
         if (f !== shownFrame) {
-          refresh(); // display was stale; the rebuild re-applies the border
+          // Display was stale: one rebuild covers the jump AND the prompt.
+          if (snMode === "auto") syncPromptFrame();
+          refresh(); // the rebuild also re-applies the selection border
+          if (snMode === "auto") focusPrompt();
+          if (snMode === "hybrid") cleanupPendingAuto(frame.current());
         } else {
           highlightGroup(dn);
           updateScrubButtons();
+          reconcilePromptNow(); // no delayed flicker; in place where it can
         }
       };
     }
@@ -2469,6 +2474,69 @@ function SyncNoteBeta() {
       } catch (e) { return false; }
     }
 
+    // Hand the prompt from the virtual card to an EXISTING group card
+    // WITHOUT rebuilding (v0.35.0): clicking a card lands the playhead on
+    // a frame that sub already covers, so the virtual prompt is redundant
+    // — hide that one widget instead of tearing down the whole list,
+    // which used to arrive ~300 ms after the click as a flicker. The card
+    // is only HIDDEN (hidden widgets collapse out of a box layout); the
+    // next real rebuild disposes of it, so nothing is deleted underfoot.
+    // Returns true when it handled the transition.
+    function retirePromptCardInPlace() {
+      try {
+        if (!liveVirtualCard || promptFrame <= 0) return false;
+        var groups = collectGroups(layer, model);
+        var target = null;
+        for (var i = 0; i < groups.length && !target; i++) {
+          var spans = groups[i].spans || [];
+          for (var s = 0; s < spans.length; s++) {
+            if (promptFrame >= spans[s].first && promptFrame <= spans[s].last) {
+              target = groups[i].drawing;
+              break;
+            }
+          }
+        }
+        if (!target || !liveGroups[target]) return false;
+        // Carry half-typed text over to that card's add box.
+        var carry = "";
+        try { carry = String(liveVirtualInput.plainText); } catch (e0) {}
+        if (carry.replace(/^\s+|\s+$/g, "") !== "") {
+          if (liveInputs[target]) {
+            try {
+              liveInputs[target].plainText = carry;
+              sizeNoteInput(liveInputs[target]);
+            } catch (e1) {}
+          } else {
+            drafts[target] = carry;
+          }
+        }
+        try { liveVirtualCard.hide(); } catch (e2) {}
+        liveVirtualCard = null;
+        liveVirtualInput = null;
+        liveVirtualHead = null;
+        try { delete liveGroups["__prompt__"]; } catch (e3) {}
+        promptTargetDrawing = target;
+        virtualDraft = null;
+        trace("prompt handed to sub " + target + " in place (no rebuild)");
+        return true;
+      } catch (e) { return false; }
+    }
+
+    // Reconcile the prompt IMMEDIATELY (v0.35.0) instead of waiting for
+    // the debounced scene-change check — that delay is what made the
+    // repaint feel like a random flicker seconds after a click. Same
+    // work, done as the click's own response; the debounced check then
+    // finds nothing to do.
+    function reconcilePromptNow() {
+      if (snMode === "hybrid") { cleanupPendingAuto(frame.current()); return; }
+      if (snMode !== "auto") return;
+      if (!syncPromptFrame()) return;            // prompt didn't move
+      if (retirePromptCardInPlace()) { focusPrompt(); return; }
+      if (tryMovePromptInPlace()) { focusPrompt(); return; }
+      refresh();                                  // structure really changed
+      focusPrompt();
+    }
+
     // The playhead settled somewhere new: move the prompt — unless the
     // box holds half-typed text (typing is intent; never yank a draft
     // out from under the user). Returns true when the prompt moved.
@@ -2831,7 +2899,10 @@ function SyncNoteBeta() {
                 refresh(); // refresh() updates the scrub buttons too
                 if (promptMoved) focusPrompt();
               } else if (promptMoved) {
-                if (tryMovePromptInPlace()) {
+                // In-place first, both ways: retire a redundant virtual
+                // card, or slide it to the new frame. Only a genuine
+                // structure change earns a rebuild.
+                if (retirePromptCardInPlace() || tryMovePromptInPlace()) {
                   focusPrompt(); // flash; scrolls only if off-screen
                 } else {
                   refresh(); // structure changed: full re-render
