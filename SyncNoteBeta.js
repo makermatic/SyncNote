@@ -45,7 +45,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.8";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.9";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1084,7 +1084,7 @@ function SyncNoteBeta() {
         if (m === "auto") {
           syncPromptFrame();
           refresh();
-          focusPrompt();
+          focusPrompt("aligntop"); // switching to Auto: show the new prompt
         } else if (prev === "auto") {
           promptFrame = -1;
           refresh();
@@ -2016,7 +2016,7 @@ function SyncNoteBeta() {
           // Display was stale: one rebuild covers the jump AND the prompt.
           if (snMode === "auto") syncPromptFrame();
           refresh(); // the rebuild also re-applies the selection border
-          if (snMode === "auto") focusPrompt();
+          if (snMode === "auto") focusPrompt("noscroll"); // you clicked it
           if (snMode === "hybrid") cleanupPendingAuto(frame.current());
         } else {
           highlightGroup(dn);
@@ -2497,6 +2497,19 @@ function SyncNoteBeta() {
           }
         }
         if (!target || !liveGroups[target]) return false;
+        // Viewport anchor (v0.35.0): hiding a card ABOVE the target
+        // shifts the list up by its height, so the clicked card jumps
+        // under the cursor — the residual click flicker. Measure the
+        // target's position before and after, then compensate the
+        // scrollbar by exactly that delta (no spacing math needed).
+        var tw = liveGroups[target];
+        var sb = null, sv = 0, ty = -1;
+        try {
+          try { listLayout.activate(); } catch (e9) {}
+          ty = (typeof tw.pos.y === "function") ? tw.pos.y() : tw.pos.y;
+          sb = scroll.verticalScrollBar();
+          sv = Number(sb.value);
+        } catch (eA) { sb = null; }
         // Carry half-typed text over to that card's add box.
         var carry = "";
         try { carry = String(liveVirtualInput.plainText); } catch (e0) {}
@@ -2511,6 +2524,18 @@ function SyncNoteBeta() {
           }
         }
         try { liveVirtualCard.hide(); } catch (e2) {}
+        try {
+          if (sb && ty >= 0) {
+            try { listLayout.activate(); } catch (eB) {}
+            var ty2 = (typeof tw.pos.y === "function") ? tw.pos.y() : tw.pos.y;
+            var delta = ty - ty2; // how far the target card moved up
+            if (delta > 0) {
+              var nv = sv - delta;
+              if (nv < 0) nv = 0;
+              sb.value = nv; // clicked card stays put on screen
+            }
+          }
+        } catch (eC) { /* anchoring is cosmetic */ }
         liveVirtualCard = null;
         liveVirtualInput = null;
         liveVirtualHead = null;
@@ -2531,10 +2556,11 @@ function SyncNoteBeta() {
       if (snMode === "hybrid") { cleanupPendingAuto(frame.current()); return; }
       if (snMode !== "auto") return;
       if (!syncPromptFrame()) return;            // prompt didn't move
-      if (retirePromptCardInPlace()) { focusPrompt(); return; }
-      if (tryMovePromptInPlace()) { focusPrompt(); return; }
+      // noscroll throughout: this path is only reached from a click.
+      if (retirePromptCardInPlace()) { focusPrompt("noscroll"); return; }
+      if (tryMovePromptInPlace()) { focusPrompt("noscroll"); return; }
       refresh();                                  // structure really changed
-      focusPrompt();
+      focusPrompt("noscroll");
     }
 
     // The playhead settled somewhere new: move the prompt — unless the
@@ -2586,12 +2612,21 @@ function SyncNoteBeta() {
       } catch (e) { return false; }
     }
 
-    function focusPrompt() {
+    // Scroll policy, explicit (v0.35.0) — `how`:
+    //   "aligntop"  a prompt card just APPEARED: pin it under the toolbar,
+    //               exactly where Manual/Hybrid put a newly created sub.
+    //   "noscroll"  came from a CLICK: the card is already under the
+    //               user's eyes, so any scroll only moves what shouldn't.
+    //   undefined   scroll only if the card isn't fully visible.
+    // In-place prompt moves never scroll — that's what ended the jitter.
+    function focusPrompt(how) {
       if (snMode !== "auto") return;
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
       var w = liveGroups[key];
-      if (w && groupFullyVisible(w)) {
-        try { highlightGroup(key); } catch (e) {} // on screen: flash, no yank
+      if (how === "aligntop") {
+        try { focusGroup(key); } catch (e) {} // pinned under the toolbar
+      } else if (how === "noscroll" || (w && groupFullyVisible(w))) {
+        try { highlightGroup(key); } catch (e) {} // border only, no scroll
       } else {
         try { focusGroup(key); } catch (e) {}
       }
@@ -2897,16 +2932,16 @@ function SyncNoteBeta() {
                 trace("timeline changed under the panel (via " + lastSignal +
                       ") — auto-refreshing");
                 refresh(); // refresh() updates the scrub buttons too
-                if (promptMoved) focusPrompt();
+                if (promptMoved) focusPrompt("aligntop"); // fresh card
               } else if (promptMoved) {
                 // In-place first, both ways: retire a redundant virtual
                 // card, or slide it to the new frame. Only a genuine
                 // structure change earns a rebuild.
                 if (retirePromptCardInPlace() || tryMovePromptInPlace()) {
-                  focusPrompt(); // flash; scrolls only if off-screen
+                  focusPrompt(); // no scroll: same card, new number
                 } else {
-                  refresh(); // structure changed: full re-render
-                  focusPrompt();
+                  refresh(); // structure changed: a prompt card APPEARED —
+                  focusPrompt("aligntop"); // line it up under the toolbar
                 }
               } else {
                 updateScrubButtons(); // playhead may have moved past the ends
