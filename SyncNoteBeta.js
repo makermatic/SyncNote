@@ -45,7 +45,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.6";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.7";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1179,8 +1179,10 @@ function SyncNoteBeta() {
     var liveGroups = {};  // drawingName -> its group card in the current build
     var staleTimer = null;
     var lastSignal = "";  // which notifier signal requested the last check
-    var hlGroup = null;   // currently highlighted group card
-    var hlTimer = null;   // clears the highlight after a moment
+    var hlGroup = null;   // widget currently wearing the highlight border
+    var selectedDrawing = null; // the SELECTED card (all three modes): the
+                              // highlight persists until another card is
+                              // selected, and survives rebuilds
     var editingNoteId = null; // note unlocked for in-place editing, or null
     var editDraft = null;     // mid-edit text captured across rebuilds
     var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
@@ -1330,6 +1332,13 @@ function SyncNoteBeta() {
       // Expanding spacer widget packs rows to the top, SyncSketch-style.
       // (Safer than addStretch(), which has its own binding quirks.)
       addW(listLayout, new QWidget(), 1);
+
+      // Restore the selection border on the rebuilt card (v0.35.0): the
+      // selection is panel state, not card state, so it must survive
+      // every rebuild — otherwise adding a note silently deselects.
+      if (selectedDrawing && liveGroups[selectedDrawing]) {
+        highlightGroup(selectedDrawing);
+      }
 
       shownSig = signatureOf(groups); // what the panel now reflects —
       // derived from the groups already collected above (single scan)
@@ -1689,6 +1698,9 @@ function SyncNoteBeta() {
           crumb("commit[add]: note added");
           saveModel(model);
           crumb("commit[add]: model saved");
+          selectedDrawing = drawingName; // the card you just wrote in is
+          // the selected one — same behavior Auto already had, applied to
+          // every mode (user rule: UI changes cover all three).
           refresh(); // no focus arg: the scroll position is preserved
           keepGroupInView(drawingName); // ...and the card stays in sight
           crumb("commit[add]: refresh done");
@@ -1996,38 +2008,36 @@ function SyncNoteBeta() {
           frame.setCurrent(f);
           scrollTimelineToFrame(f); // bring the sub into the Timeline view
         }
-        if (f !== shownFrame) refresh(); // display was stale (also updates ◀/▶)
-        else updateScrubButtons();
+        // Clicking a card SELECTS it (v0.35.0, all three modes): the
+        // highlight was previously only applied by ◀/▶ navigation, so
+        // clicking a card to jump left no visible trace of where you are.
+        selectedDrawing = dn;
+        if (f !== shownFrame) {
+          refresh(); // display was stale; the rebuild re-applies the border
+        } else {
+          highlightGroup(dn);
+          updateScrubButtons();
+        }
       };
     }
 
-    // Flash a white border on the card the arrow keys landed on, so it's
-    // obvious where navigation went; fades automatically. Deliberately
-    // styling-only (no event filters — see the v0.8.x card-click saga);
-    // the #id selector keeps the border off the note cards inside.
+    // White border marking the SELECTED card — where navigation landed or
+    // where you clicked. PERSISTENT (v0.35.0, user spec): it stays until
+    // another card is selected, in all three modes; it used to fade after
+    // 2.5 s, which made the selection feel like it had been lost. Purely
+    // styling (no event filters — see the v0.8.x card-click saga); the
+    // #id selector keeps the border off the note cards inside.
     function highlightGroup(drawingName) {
       clearHighlight();
+      selectedDrawing = drawingName; // remembered across rebuilds
       var w = liveGroups[drawingName];
       if (!w) return;
-      if (w === liveVirtualCard) return; // prompt card: PERSISTENT border,
-                                         // never the 2.5 s flash (it would
-                                         // overwrite and then clear it)
+      if (w === liveVirtualCard) return; // prompt card wears its own border
       try {
         w.objectName = "snGroupHL";
         w.styleSheet = "#snGroupHL { border: 1px solid #ffffff; border-radius: 3px; }";
         hlGroup = w;
-      } catch (e) { return; } // styling refused; nothing to clean up
-      try {
-        if (!hlTimer) {
-          try { hlTimer = new QTimer(dlg); }
-          catch (e0) { hlTimer = new QTimer(); }
-          hlTimer.singleShot = true;
-          hlTimer.timeout.connect(clearHighlight);
-          g_snKeepAlivePanel.push(hlTimer); // survives refreshes
-        }
-        hlTimer.stop();
-        hlTimer.start(2500);
-      } catch (e) { /* highlight just stays until the next one */ }
+      } catch (e) { /* styling refused; nothing to clean up */ }
     }
 
     function clearHighlight() {
