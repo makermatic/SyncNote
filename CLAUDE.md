@@ -101,8 +101,15 @@ your instincts disagree, the KB wins.
 
 ## State / roadmap
 
-Current: **v0.34.6**, blessed to `release` 2026-07-26 (sixth blessing) — main
-and release aligned. THREE note-adding modes (KB §40 — Manual / Hybrid
+Current: **v0.35.0**, blessed to `release` 2026-07-26 (seventh blessing) —
+main and release aligned. v0.35.0 = perf pass + click fixes (KB §42): lazy
+note editors, one timeline scan per rebuild, commits deferred out of the
+text signal, Add buttons wired to `pressed` too (Harmony sometimes never
+delivers a mouse RELEASE, so `clicked` alone lost saves), mid-span sub
+reuse, persistent card selection, and one explicit prompt scroll policy.
+A commit-path crash journal ships at `%TEMP%/syncnote_crashjournal.txt`
+(survives a crash — read it FIRST when the open Enter crash recurs).
+Earlier state: THREE note-adding modes (KB §40 — Manual / Hybrid
 click-to-add / Auto playhead-following virtual prompt) plus the §41
 aftershocks: scrub chars fixed via the textChanged path, DELETING THE NOTES
 NODE NOW DELETES ITS NOTES (user decision; no undo once the panel runs),

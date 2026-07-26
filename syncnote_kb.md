@@ -811,7 +811,17 @@ Same-day post-release fixes and decisions after the 0.34.0 blessing:
 - **v0.34.5 — DESIGN CHANGE (user decision): deleting the Notes node DELETES its notes.** The original rebuild-and-recover path (resurrecting notes from metadata) removed. CAVEAT told in full: metadata writes are NOT on Harmony's undo stack — undo after the panel has relaunched restores the layer/art but never the note text; save-on-close makes the purge stick quickly.
 - **v0.34.6 — recycled-element ghost fix:** Harmony REUSES freed element IDs (log-proven: element #59, then a later fresh layer got #55). Scene metadata still held note-buckets of every deleted layer, so a fresh element could inherit a dead layer's bucket and resurrect its notes. Fresh layers now stamp their bucket empty regardless of ID. (This latent bug predates everything — the old recovery path had masked it.)
 
-## 42. Perf beta + the parked crash hunt — v0.35.0-beta series (2026-07-26)
+## 42. Perf pass, click fixes — v0.35.0, SHIPPED + BLESSED (2026-07-26)
+
+**SEVENTH BLESSING — v0.35.0 (2026-07-26):** nine-beta cycle, blessed same day. Ritual clean: fold → beta file deleted (repo + both script folders) → stamp → `-X theirs` merge → single-version-line check → SHA-pinned verification (HTTP 200, 154720 bytes, one version line, `buildEditor` + `retirePromptCardInPlace` + `pressed.connect` present, updater re-enabled). The crash journal ships **commit-path only** (one small file write per saved note, none per rebuild) while the Enter crash stays open.
+
+Later beta findings, all user-reported and log-diagnosed:
+- **Selection is now persistent and mode-wide (beta.7):** clicking a card selects it (the white border used to be applied ONLY by ◀/▶, so click-navigation left no trace in Manual/Hybrid), the 2.5 s fade is gone, selection is panel state re-applied after every rebuild, and committing a note selects that card in all three modes. **Zack's standing rule from this round (now in CLAUDE.md): a UI change applies to ALL THREE MODES unless he scopes it.**
+- **Saving no longer scrolls the view away (beta.6):** commits passed the drawing to `refresh()`, which pins that card to the TOP — a behavior meant for NEWLY CREATED subs. Commits now preserve scroll and only scroll if the card is off-screen.
+- **The delayed click flicker (beta.8):** a card click left prompt reconciliation to the 300 ms debounced staleness check, whose rebuild then arrived detached from the click. Now reconciled synchronously in the click handler, and the common transition (virtual prompt card becomes redundant because the clicked sub already covers that frame) HIDES that one card and hands the prompt to the group's add box — carrying typed text — instead of rebuilding. Hidden widgets collapse out of a box layout; nothing is deleted underfoot (deliberate, with the crash open).
+- **The at-click flicker (beta.9):** hiding a prompt card ABOVE the clicked card shifted the list up. Fixed by anchoring the viewport — measure the target card's y before/after the hide and compensate the scrollbar by exactly that delta (no spacing math). Plus one explicit **scroll policy** in `focusPrompt(how)`: `"aligntop"` when a prompt card APPEARS (matches where Manual/Hybrid put a new sub — Zack's request), `"noscroll"` for click-driven paths, default = scroll only if not fully visible, and in-place moves never scroll.
+
+## 42a. Perf beta + the parked crash hunt — v0.35.0-beta series (2026-07-26)
 
 Perf work against the §40 baseline, shipped as `SyncNoteBeta.js`:
 - **Lazy editors:** each note card's hidden QTextEdit editor is built on the FIRST ✎ click (mid-edit rebuilds build it inline and slot it above the top-pack spacer). Roughly halves per-card text-widget cost.
