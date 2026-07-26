@@ -42,7 +42,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.4";          // prompt always follows (2026-07-26)
+  var SN_VERSION    = "0.34.1";          // scrub-chars fix (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1083,7 +1083,6 @@ function SyncNote() {
       }
       updateModeLabel();
       trace("mode switched to " + m);
-      scrubTypingMode = false;
       // Mode-transition housekeeping: leaving Hybrid abandons an empty
       // click-prompt; entering Auto spawns the follow-prompt; leaving
       // Auto removes the virtual card.
@@ -1576,7 +1575,6 @@ function SyncNote() {
         if (txt === "") return;
         addNote(model, layer.elementId, drawingName, txt);
         saveModel(model);
-        scrubTypingMode = false; // fresh box: scrub keys scrub again
         // Empty the box before refresh so the draft-stash doesn't re-save
         // the just-committed text as an unsaved draft.
         try { input.plainText = ""; } catch (e) {}
@@ -1601,10 +1599,6 @@ function SyncNote() {
         sizeNoteInput(input);
         try {
           var t = String(input.plainText);
-          if (handleTabSwitch(input, prevAddText, t)) {
-            prevAddText = "";
-            return;
-          }
           if (handleScrubChars(input, prevAddText, t)) {
             prevAddText = "";
             return;
@@ -2223,7 +2217,6 @@ function SyncNote() {
         addNote(model, layer.elementId, dn, txt);
         saveModel(model);
         virtualDraft = null;
-        scrubTypingMode = false; // fresh prompt: scrub keys scrub again
         try { input.plainText = ""; } catch (e) {}
         trace("auto: note committed at frame " + promptFrame +
               " (sub " + dn + ")");
@@ -2244,7 +2237,6 @@ function SyncNote() {
         sizeNoteInput(input);
         try {
           var t = String(input.plainText);
-          if (handleTabSwitch(input, prevTxt, t)) { prevTxt = ""; return; }
           if (handleScrubChars(input, prevTxt, t)) { prevTxt = ""; return; }
           if (isEnterKeypress(prevTxt, t)) {
             trace("Enter via fallback (prompt box) — saving");
@@ -2266,25 +2258,8 @@ function SyncNote() {
     // Enter saves): in Auto mode, when an add box's content becomes ONLY
     // scrub characters, they were frame steps — perform them and clear
     // the box. A held key streams characters; each one steps.
-    // Tab in an empty Auto add box = "typing mode" (v0.34.2, user
-    // request): after scrubbing with , . < >, Tab declares "now I'm
-    // writing" — scrub characters then TYPE instead of stepping (so a
-    // note may start with . or ,). Heard as a text change (QTextEdit
-    // inserts \t — the key path this engine honors). Resets when the
-    // note commits, the prompt moves on, or the mode changes.
-    var scrubTypingMode = false;
-    function handleTabSwitch(box, prev, now) {
-      if (snMode !== "auto") return false;
-      if (prev !== "" || now !== "\t") return false;
-      scrubTypingMode = true;
-      try { box.plainText = ""; } catch (e) {} // the tab was a gesture
-      trace("Tab — typing mode (scrub characters now type literally)");
-      return true;
-    }
-
     function handleScrubChars(box, prev, now) {
       if (snMode !== "auto") return false;
-      if (scrubTypingMode) return false; // Tab said: these are words now
       if (!/^[,.<>]+$/.test(now)) return false;
       if (prev !== "" && !/^[,.<>]+$/.test(prev)) return false;
       var steps = now.length - prev.length;
@@ -2345,50 +2320,15 @@ function SyncNote() {
       var f = -1;
       try { f = frame.current(); } catch (e) { return false; }
       if (f <= 0 || f === promptFrame) return false;
-      // The prompt ALWAYS follows (v0.34.4): the old draft-pin rule froze
-      // the prompt the moment the box held text — which read as "the
-      // panel is dead" (log-proven). Half-typed text now rides along;
-      // Enter commits it to whatever frame the header shows.
-      promptFrame = f;
-      scrubTypingMode = false; // new prompt location: scrub keys scrub
-      return true;
-    }
-
-    // Visible feedback on every prompt move: an in-place move only
-    // changes the header number, so mouse-driven moves LOOKED dead. The
-    // persistent white border BLINKS — off for a beat, back on — the
-    // panel's existing visual language, nothing new (v0.34.4).
-    var promptFlashTimer = null;
-    function flashPromptCard() {
-      if (promptTargetDrawing) { // a real group is the prompt: normal flash
-        try { highlightGroup(promptTargetDrawing); } catch (e) {}
-        return;
-      }
-      if (!liveVirtualCard) return;
       try {
-        liveVirtualCard.styleSheet =
-          "#snPromptHL { border: 1px solid transparent; " +
-          "border-radius: 3px; }"; // same geometry: no relayout jitter
-      } catch (e) { return; }
-      try {
-        if (!promptFlashTimer) {
-          try { promptFlashTimer = new QTimer(dlg); }
-          catch (e0) { promptFlashTimer = new QTimer(); }
-          promptFlashTimer.singleShot = true;
-          promptFlashTimer.timeout.connect(function () {
-            try {
-              if (liveVirtualCard) {
-                liveVirtualCard.styleSheet =
-                  "#snPromptHL { border: 1px solid #ffffff; " +
-                  "border-radius: 3px; }";
-              }
-            } catch (e) {}
-          });
-          g_snKeepAlivePanel.push(promptFlashTimer);
+        if (liveVirtualInput &&
+            String(liveVirtualInput.plainText)
+              .replace(/^\s+|\s+$/g, "") !== "") {
+          return false; // draft in progress: the prompt stays put
         }
-        promptFlashTimer.stop();
-        promptFlashTimer.start(180);
-      } catch (e) { /* blink cosmetic only */ }
+      } catch (e) {}
+      promptFrame = f;
+      return true;
     }
 
     // Scroll to + flash the prompt; move the keyboard into its box ONLY
@@ -2426,10 +2366,9 @@ function SyncNote() {
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
       var w = liveGroups[key];
       if (w && groupFullyVisible(w)) {
-        try { flashPromptCard(); } catch (e) {} // on screen: pulse, no yank
+        try { highlightGroup(key); } catch (e) {} // on screen: flash, no yank
       } else {
         try { focusGroup(key); } catch (e) {}
-        try { flashPromptCard(); } catch (e) {}
       }
       if (SN_AUTO_FOCUS !== "steal") return;
       var active = false;
