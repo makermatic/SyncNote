@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.14";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.15";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1205,6 +1205,10 @@ function SyncNoteBeta() {
     var virtualDraft = null;  // prompt text preserved across rebuilds
     var liveVirtualInput = null; // the prompt card's box, per build
     var liveVirtualCard = null;  // ...and the card itself (scroll/flash)
+    var liveVirtualHead = null;  // ...and its header label (in-place moves)
+    var promptAnchor = "";    // drawing the virtual card sits BEFORE ("" =
+                              // end of list) — same anchor = same slot =
+                              // the card can move in place, no rebuild
     var lastKeyScrubMs = 0;   // last frame step via the prompt box's scrub
                               // keys — rebuilds are DEFERRED while this is
                               // fresh (key autorepeat's ~500 ms warm-up
@@ -1254,6 +1258,7 @@ function SyncNoteBeta() {
       } catch (e) { /* best-effort */ }
       liveVirtualInput = null;
       liveVirtualCard = null;
+      liveVirtualHead = null;
 
       // Stash half-typed notes so an auto-refresh can't eat a draft.
       try {
@@ -1291,9 +1296,11 @@ function SyncNoteBeta() {
         }
       }
       var virtualPlaced = !needVirtual;
+      promptAnchor = "";
       for (var i = 0; i < groups.length; i++) {
         if (!virtualPlaced &&
             (groups[i].frame < 0 || groups[i].frame > promptFrame)) {
+          promptAnchor = groups[i].drawing; // remember the slot
           addW(listLayout, makeVirtualCard(promptFrame)); // frame order
           virtualPlaced = true;
         }
@@ -2159,6 +2166,7 @@ function SyncNoteBeta() {
         vf + "</span>");
       try { head.textInteractionFlags = Qt.NoTextInteraction; } // click-through
       catch (e) { try { head.textInteractionFlags = 0; } catch (e2) {} }
+      liveVirtualHead = head; // in-place moves rewrite this label
       addW(v, head);
 
       var rowW = new QWidget();
@@ -2185,14 +2193,17 @@ function SyncNoteBeta() {
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
-        // The sub is born HERE — at commit time, not prompt time.
-        var dn = ensureSubstitutionAtFrame(layer, vf);
+        // The sub is born HERE — at commit time, not prompt time. Target
+        // promptFrame (live), not the captured vf: in-place moves slide
+        // the card to new frames without rebuilding it (beta.15).
+        var dn = ensureSubstitutionAtFrame(layer, promptFrame);
         if (!dn) return;
         addNote(model, layer.elementId, dn, txt);
         saveModel(model);
         virtualDraft = null;
         try { input.plainText = ""; } catch (e) {}
-        trace("auto: note committed at frame " + vf + " (sub " + dn + ")");
+        trace("auto: note committed at frame " + promptFrame +
+              " (sub " + dn + ")");
         refresh(dn);
         // Stay in the cockpit (beta.13): our window is active (the user
         // just typed here), so focus flows into the next prompt's box —
@@ -2294,6 +2305,42 @@ function SyncNoteBeta() {
         g_snKeepAlive.push(f); // pin or GC kills the override
         return f;
       } catch (e) { return null; }
+    }
+
+    // Move the prompt WITHOUT rebuilding (beta.15): when only the prompt
+    // frame changed and the card keeps its slot between the same
+    // neighbors, rewrite the header label in place — the SAFE kind of
+    // text swap. The reported blink was a full ~40 ms rebuild on every
+    // scrub settle (seventeen in a row in the log); short scrubs now
+    // touch one label and nothing else, and the box keeps focus since it
+    // is never destroyed. Returns false when the structure really
+    // changed (new slot, or a sub starts at the new frame) — callers
+    // fall back to a full refresh.
+    function tryMovePromptInPlace() {
+      try {
+        if (!liveVirtualCard || !liveVirtualHead) return false;
+        if (promptTargetDrawing) return false; // prompt was a real group
+        var groups = collectGroups(layer, model);
+        for (var i = 0; i < groups.length; i++) {
+          var spans = groups[i].spans || [];
+          for (var s = 0; s < spans.length; s++) {
+            if (spans[s].first === promptFrame) return false; // real group now
+          }
+        }
+        var anchor = "";
+        for (var j = 0; j < groups.length; j++) {
+          if (groups[j].frame < 0 || groups[j].frame > promptFrame) {
+            anchor = groups[j].drawing;
+            break;
+          }
+        }
+        if (anchor !== promptAnchor) return false; // slot changed
+        liveVirtualHead.text =
+          '<span style="color: ' + SN_GREEN + '; font-weight: bold;">Frame ' +
+          promptFrame + "</span>";
+        trace("auto: prompt moved in place to frame " + promptFrame);
+        return true;
+      } catch (e) { return false; }
     }
 
     // The playhead settled somewhere new: move the prompt — unless the
@@ -2668,8 +2715,12 @@ function SyncNoteBeta() {
                 refresh(); // refresh() updates the scrub buttons too
                 if (promptMoved) focusPrompt();
               } else if (promptMoved) {
-                refresh(); // re-render: the virtual card moves frames
-                focusPrompt();
+                if (tryMovePromptInPlace()) {
+                  focusPrompt(); // flash; scrolls only if off-screen
+                } else {
+                  refresh(); // structure changed: full re-render
+                  focusPrompt();
+                }
               } else {
                 updateScrubButtons(); // playhead may have moved past the ends
               }
