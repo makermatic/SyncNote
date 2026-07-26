@@ -45,7 +45,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.5";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.6";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1483,6 +1483,31 @@ function SyncNoteBeta() {
       }
     }
 
+    // Saving a note must NOT move the view (v0.35.0): commits used to
+    // pass the drawing to refresh(), which pins that card to the TOP of
+    // the list — a behavior meant for NEWLY CREATED subs. On a commit the
+    // card is normally already under your eyes, so the pin just yanked
+    // the panel elsewhere. Scroll only when the card is off-screen, and
+    // check again once the rebuilt layout has real geometry.
+    function keepGroupInView(dn) {
+      function check() {
+        try {
+          var w = liveGroups[dn];
+          if (!w) return;
+          if (!groupFullyVisible(w)) scrollGroupToTop(dn);
+        } catch (e) {}
+      }
+      check();
+      try {
+        var t;
+        try { t = new QTimer(dlg); } catch (e0) { t = new QTimer(); }
+        g_snKeepAlive.push(t);
+        t.singleShot = true;
+        t.timeout.connect(check);
+        t.start(80);
+      } catch (e) { /* the immediate check already did its best */ }
+    }
+
     // Gray out ◀/▶ when there's no note strictly before/after the playhead.
     // Uses the same data as the jump logic, so button state and jump
     // behavior can never disagree.
@@ -1664,7 +1689,8 @@ function SyncNoteBeta() {
           crumb("commit[add]: note added");
           saveModel(model);
           crumb("commit[add]: model saved");
-          refresh();
+          refresh(); // no focus arg: the scroll position is preserved
+          keepGroupInView(drawingName); // ...and the card stays in sight
           crumb("commit[add]: refresh done");
         });
       }
@@ -2336,7 +2362,9 @@ function SyncNoteBeta() {
           crumb("commit[auto]: note added");
           saveModel(model);
           crumb("commit[auto]: model saved");
-          refresh(dn);
+          refresh(); // was refresh(dn): pinning the card to the top
+                     // yanked the view away from what you just typed
+          keepGroupInView(dn);
           crumb("commit[auto]: refresh done");
           // Stay in the cockpit: focus flows into the next prompt's box.
           focusPrompt();
