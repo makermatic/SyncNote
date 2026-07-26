@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.18";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.19";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1209,6 +1209,9 @@ function SyncNoteBeta() {
     var promptAnchor = "";    // drawing the virtual card sits BEFORE ("" =
                               // end of list) — same anchor = same slot =
                               // the card can move in place, no rebuild
+    var lastBoxFocusOutMs = 0; // when ANY note box last lost focus — the
+                               // Escape-close arbiter (focus events DO
+                               // reach filters on this engine; keys don't)
     var lastKeyScrubMs = 0;   // last frame step via the prompt box's scrub
                               // keys — rebuilds are DEFERRED while this is
                               // fresh (key autorepeat's ~500 ms warm-up
@@ -2001,6 +2004,10 @@ function SyncNoteBeta() {
         var f = new QObject(dlg);
         f.eventFilter = function (watched, event) {
           try {
+            try { // focus stamps feed the Escape-close interception
+              var ft = Number(event.type());
+              if (ft === 9) { lastBoxFocusOutMs = (new Date()).getTime(); }
+            } catch (eF) {}
             if (event.type() === QEvent.KeyPress) {
               var k = event.key();
               // Two-stage Escape (v0.34.0 user spec): the first Escape
@@ -2287,7 +2294,11 @@ function SyncNoteBeta() {
             // Focus diagnostics (beta.12): the log shows exactly when the
             // box gains/loses the keyboard — the scrub-death arbiter.
             if (et === 8) { trace("prompt box: focus IN"); return false; }
-            if (et === 9) { trace("prompt box: focus OUT"); return false; }
+            if (et === 9) {
+              lastBoxFocusOutMs = (new Date()).getTime();
+              trace("prompt box: focus OUT");
+              return false;
+            }
             var kp = 6;
             try { kp = Number(QEvent.KeyPress) || 6; } catch (e0b) {}
             if (et === kp) {
@@ -3162,9 +3173,53 @@ function SyncNoteBeta() {
     // save per session-close — no xstage churn.
     // NOTE: saveAll() commits the WHOLE scene, not just notes. If teachers
     // prefer confirming, the prompt variant is documented in the KB (§25).
+    // Two-stage Escape (v0.34.0), engine-proof: this Harmony withholds
+    // KEY events from script filters (Enter has always arrived via the
+    // textChanged fallback), so Escape is intercepted at the layer the
+    // engine honors — the close machinery itself. Primary: override the
+    // reject() virtual (the routine Escape invokes; same override
+    // mechanism as eventFilter). If a text box has focus, blur it and
+    // refuse to close; otherwise close normally via done(0).
+    try {
+      dlg.reject = function () {
+        try {
+          var fw = null;
+          try { fw = QApplication.focusWidget(); } catch (e0) {}
+          var isBox = false;
+          var probe = fw;
+          for (var hops = 0; probe && hops < 3 && !isBox; hops++) {
+            try {
+              if (String(probe.metaObject().className())
+                    .toLowerCase().indexOf("textedit") >= 0) isBox = true;
+            } catch (e1) {}
+            try { probe = probe.parentWidget(); } catch (e2) { probe = null; }
+          }
+          if (isBox) {
+            trace("Escape intercepted — left the text box (panel stays)");
+            try { fw.clearFocus(); }
+            catch (e3) { try { dlg.setFocus(); } catch (e4) {} }
+            return; // the panel does NOT close
+          }
+        } catch (e) { /* fall through to a normal close */ }
+        try { dlg.done(0); } // emits rejected → save-on-close runs below
+        catch (e5) { try { dlg.hide(); } catch (e6) {} }
+      };
+    } catch (e) { /* override refused: the re-show net below covers */ }
+
     dlg.rejected.connect(function () {
       try {
         try { if (dlg.property("snSilentClose")) return; } catch (e0) {}
+        // Safety net for an inert reject override: a close landing within
+        // a blink of a box losing focus WAS an in-box Escape — reopen
+        // instead of closing (the second Escape then closes normally).
+        try {
+          if (((new Date()).getTime() - lastBoxFocusOutMs) < 300) {
+            trace("close blocked — a text box was focused; Escape steps " +
+                  "out first (close again to really close)");
+            try { dlg.show(); } catch (e0b) {}
+            return; // not closing: no save-on-close
+          }
+        } catch (e0c) {}
         // An untouched Auto prompt dies with the panel (quiet: no rebuild
         // of a closing dialog) — before the dirty check, so the removal
         // itself is included in the save below.
