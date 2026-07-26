@@ -1,8 +1,8 @@
 /*
- * SyncNoteBeta.js  —  PERFORMANCE BETA (toolbar function: SyncNoteBeta)
+ * SyncNoteBeta.js  â€”  PERFORMANCE BETA (toolbar function: SyncNoteBeta)
  * Lazy editors, single-scan rebuilds, and commit-refresh deferred out of
- * the text signal (also the prime suspect for the parked Enter crash —
- * KB §41). Fold into SyncNote.js on approval.
+ * the text signal (also the prime suspect for the parked Enter crash â€”
+ * KB Â§41). Fold into SyncNote.js on approval.
  * -----------------------------------------------------------------------------
  * Attach text review notes to drawing substitutions inside a scene.
  *
@@ -13,8 +13,8 @@
  *     substitution group has its own text field for adding dated notes.
  *   - Notes are stored INSIDE the scene (scene metadata), keyed by element ID +
  *     drawing name, so renaming the layer/scene never orphans them.
- *   - Clicking anywhere on a note card — its text, its background, or the
- *     green "Frame ####" link — jumps the playhead there, so you see the
+ *   - Clicking anywhere on a note card â€” its text, its background, or the
+ *     green "Frame ####" link â€” jumps the playhead there, so you see the
  *     note and the artwork together (card-wide since v0.32.0).
  *   - Three note-adding modes (v0.34.0), cycled from the status strip:
  *     Manual (buttons only), Hybrid (clicking empty panel space starts a
@@ -32,24 +32,24 @@
 
 // Strong references to script-created QObjects (event filters, timers).
 // Their JS wrappers hold the script-side method overrides; if the wrapper
-// is garbage-collected, the override silently reverts to a no-op — which
+// is garbage-collected, the override silently reverts to a no-op â€” which
 // showed up in testing as card clicks randomly dying. Module scope keeps
 // them alive for the dialog's lifetime; reset on each launch.
 var g_snKeepAlive = [];      // per-refresh objects (card filters, scroll timer)
 var g_snKeepAlivePanel = []; // panel-lifetime objects (SceneChangeNotifier,
-                             // stale-check timer) — must survive refreshes
-var g_snNotesDirty = false;  // notes changed since the scene was last saved —
+                             // stale-check timer) â€” must survive refreshes
+var g_snNotesDirty = false;  // notes changed since the scene was last saved â€”
                              // module-level so it survives panel relaunches
 
 function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.2";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.3";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
-  var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB §28)
+  var SN_EMPTY_TVG_BYTES = 1024;         // files at/below this = blank drawing (see KB Â§28)
   var META_KEY      = "SyncNote";        // scene-metadata key holding our JSON model
   var META_TYPE     = "string";
   var MODEL_VERSION = 1;
@@ -63,17 +63,17 @@ function SyncNoteBeta() {
   // ---- mode policy (v0.34.0): change ONE line to change the default ----
   // The panel opens in SN_DEFAULT_MODE every launch. Flip the REMEMBER
   // switch to true and the last-used mode rides in the scene's metadata
-  // instead (survives restarts because the SCENE remembers — Harmony's
-  // own preferences storage is unreliable across restarts, KB §36).
+  // instead (survives restarts because the SCENE remembers â€” Harmony's
+  // own preferences storage is unreliable across restarts, KB Â§36).
   // THREE modes (user design, 2026-07-26): "manual" = classic buttons;
   // "hybrid" = v1 Auto (a click on any non-interactive spot creates the
   // note prompt at the playhead); "auto" = v2 (the prompt FOLLOWS the
-  // playhead — virtual card, no sub until the note commits).
+  // playhead â€” virtual card, no sub until the note commits).
   var SN_DEFAULT_MODE = "manual";           // "manual" | "hybrid" | "auto"
   var SN_REMEMBER_MODE_IN_SCENE = false;    // true = per-scene stickiness
   // Auto focus policy: "steal" moves the keyboard into the prompt box
   // when the playhead settles (an empty box turns , . < > into real
-  // frame steps — see handleScrubChars — so keyboard scrubbing survives
+  // frame steps â€” see handleScrubChars â€” so keyboard scrubbing survives
   // the steal); "off" = prompt follows, a click on the panel focuses.
   var SN_AUTO_FOCUS = "steal";              // "steal" | "off"
 
@@ -102,8 +102,8 @@ function SyncNoteBeta() {
     // The launch info line (beta.8, user design): the Layer/element/port
     // readout that used to clutter the bottom strip now leads the log.
     // (The version is already in every line's prefix.)
-    trace("Layer: " + layer.node + "  •  element #" + layer.elementId +
-          "  •  " + notesPortInfo(layer.node));
+    trace("Layer: " + layer.node + "  â€¢  element #" + layer.elementId +
+          "  â€¢  " + notesPortInfo(layer.node));
     trace("connection: " + connectStatus); // verdict lives in the Message Log
     applyNotesColor(layer.node); // paint it SyncNote green, every run
 
@@ -117,7 +117,7 @@ function SyncNoteBeta() {
 
     // First use ONLY (layer has no subs yet): create a starter substitution
     // at the playhead so a new user has something to type into. On every
-    // later launch, opening the panel creates nothing — the Add Note button
+    // later launch, opening the panel creates nothing â€” the Add Note button
     // is the only thing that makes subs (v0.13.0; launching on a random
     // frame used to leave stray empty subs).
     var existingTimings = [];
@@ -184,7 +184,7 @@ function SyncNoteBeta() {
       id:   "n_" + (new Date()).getTime(),
       text: text,
       done: false, // checklist state; notes from older builds lack this = unchecked
-      ts:   (new Date()).getTime(), // numeric — Qt Script's Date can't parse ISO strings
+      ts:   (new Date()).getTime(), // numeric â€” Qt Script's Date can't parse ISO strings
       date: (new Date()).toISOString()
     });
   }
@@ -205,7 +205,7 @@ function SyncNoteBeta() {
     if (found) return found;
 
     // The Notes NODE is gone: deleting the node DELETES ITS NOTES (user
-    // decision, 2026-07-26 — replaces the original rebuild-and-recover
+    // decision, 2026-07-26 â€” replaces the original rebuild-and-recover
     // behavior, which resurrected notes from scene metadata and made
     // node deletion feel broken). Discard the old element's notes and
     // start fresh. CAVEAT: once the scene saves, this purge has no undo.
@@ -215,14 +215,14 @@ function SyncNoteBeta() {
         if (model.notesByDrawing[eid]) {
           delete model.notesByDrawing[eid];
           saveModel(model);
-          trace("Notes node was deleted — its notes were discarded");
+          trace("Notes node was deleted â€” its notes were discarded");
         }
       } catch (e) { /* worst case: stale notes linger in metadata */ }
       model.syncNoteElementId = -1;
     }
     var fresh = createNotesLayer();
     // Harmony RECYCLES element IDs (proven: the panel reported element
-    // #59, then a later fresh layer got #55) — so a new element can
+    // #59, then a later fresh layer got #55) â€” so a new element can
     // inherit the note-bucket of a long-deleted layer and its ghost
     // notes. A brand-new layer has zero notes BY DEFINITION: stamp its
     // bucket empty, whatever ID Harmony handed out.
@@ -297,11 +297,11 @@ function SyncNoteBeta() {
 
   // Connect the READ node to the scene's top-level Composite so it renders.
   // Port 0 with mayAddInputPort=true inserts at the LEFTMOST input, which the
-  // Composite renders on top — exactly where review notes belong.
+  // Composite renders on top â€” exactly where review notes belong.
   // ---- Connection, redone (v0.9.0) ----------------------------------------
   //
   // Every earlier attempt verified success by PORT INDEX and trusted the docs
-  // ("leftmost port renders in front") — and kept disagreeing with what the
+  // ("leftmost port renders in front") â€” and kept disagreeing with what the
   // user saw in the layer stack. This version verifies against the actual
   // RENDER ORDER via compositionOrder.buildDefaultCompositionOrder(), which
   // is literally "the Timeline view's composition order" (frontmost first).
@@ -321,20 +321,20 @@ function SyncNoteBeta() {
         node.setCoord(readPath, node.coordX(comp) - 60, node.coordY(comp) - 80);
       } catch (e) { /* cosmetic only */ }
       try { linked = node.numberOfOutputLinks(readPath, 0) > 0; } catch (e) {}
-      if (!linked) return "NOT connected — plug the Notes node into your Composite";
+      if (!linked) return "NOT connected â€” plug the Notes node into your Composite";
     }
 
     // 2) Measure the truth.
     var rank = renderRank(readPath);
     trace("initial render rank: " + rank + " (0 = frontmost layer)");
-    if (rank === 0) return "frontmost layer ✓";
-    if (rank === -2) return "connected — render order unreadable (see Message Log)";
+    if (rank === 0) return "frontmost layer âœ“";
+    if (rank === -2) return "connected â€” render order unreadable (see Message Log)";
 
     // 3) Not frontmost: try both port orders, measuring after each. Which
-    // end of the port row is "front" has been ambiguous all along — so let
+    // end of the port row is "front" has been ambiguous all along â€” so let
     // the measurement decide instead of assuming.
     // Measured in live testing (v0.9.0 logs): the LAST-connected port is the
-    // frontmost layer — the opposite of the documented "leftmost renders in
+    // frontmost layer â€” the opposite of the documented "leftmost renders in
     // front". Try the proven winner first; keep the other as a safety net
     // for scenes/versions where the semantics differ.
     var strategies = [
@@ -345,11 +345,11 @@ function SyncNoteBeta() {
       reorderComposite(readPath, comp, strategies[s].notesFirst);
       rank = renderRank(readPath);
       trace("after reorder (" + strategies[s].label + "): rank " + rank);
-      if (rank === 0) return "frontmost layer ✓ (" + strategies[s].label + ")";
+      if (rank === 0) return "frontmost layer âœ“ (" + strategies[s].label + ")";
     }
 
     // 4) Neither order satisfied the measurement. CRITICAL: do not leave
-    // the LOSING order in place (v0.9.1..v0.14.x did — the last strategy
+    // the LOSING order in place (v0.9.1..v0.14.x did â€” the last strategy
     // tried was Notes-first, i.e. the BACK port, so failing scenes got
     // actively parked at the back). Re-apply the empirically-front order
     // (Notes on last port), then report honestly.
@@ -357,7 +357,7 @@ function SyncNoteBeta() {
     logCompositionOrder();
     logPortMap();
     rank = renderRank(readPath);
-    return "left on last port (usually front) — render check disagrees " +
+    return "left on last port (usually front) â€” render check disagrees " +
            "(rank " + rank + "); diagnostics in Message Log";
   }
 
@@ -365,10 +365,10 @@ function SyncNoteBeta() {
   // N = that many layers render in front of it, -2 = unmeasurable.
   //
   // Group-scene gotcha (found in a rigged scene): the composition also
-  // enumerates nodes INSIDE groups, ordered by group traversal — ~45 rig
+  // enumerates nodes INSIDE groups, ordered by group traversal â€” ~45 rig
   // drawings "ahead" of Notes no matter the port order, so verification
   // could never pass. Fix: only TOP-LEVEL items compete (depth 0 per
-  // CompositionItem.depth) — READ layers and GROUPs (a group ahead of
+  // CompositionItem.depth) â€” READ layers and GROUPs (a group ahead of
   // Notes means its whole rig draws in front, so it counts as one layer).
   function renderRank(readPath) {
     try {
@@ -387,7 +387,7 @@ function SyncNoteBeta() {
           if (t === "READ" || t === "GROUP") ahead++;
         } catch (e2) { /* unreadable node; don't count it */ }
       }
-      return -2; // Notes absent from the composition — not rendering at all
+      return -2; // Notes absent from the composition â€” not rendering at all
     } catch (e) {
       return -2; // API not available in this build
     }
@@ -458,11 +458,11 @@ function SyncNoteBeta() {
 
   // Locate the Timeline view's FRAMES-AREA horizontal scrollbar.
   //
-  // v0.11.0 gotcha: the Timeline has (at least) two horizontal scrollbars —
+  // v0.11.0 gotcha: the Timeline has (at least) two horizontal scrollbars â€”
   // the layer-name column's and the frames area's. Grabbing the first
   // "timeline-ish" one found the wrong bar (range 0), and the scroll became
   // a silent no-op. Now every candidate is collected and the one with the
-  // LARGEST scroll range wins — when zoomed in, that's the frames area by a
+  // LARGEST scroll range wins â€” when zoomed in, that's the frames area by a
   // huge margin. The cache is revalidated by range, not mere existence.
   function findTimelineScrollbar() {
     try {
@@ -513,7 +513,7 @@ function SyncNoteBeta() {
         return best;
       }
       if (candidates > 0) {
-        // All ranges are 0: the whole scene fits on screen — nothing to
+        // All ranges are 0: the whole scene fits on screen â€” nothing to
         // scroll. Not an error; stay quiet and try again next jump.
         return null;
       }
@@ -594,7 +594,7 @@ function SyncNoteBeta() {
   // Diagnostic for the status bar: which composite input port Notes is on.
   // Port 0 should be the LEFTMOST (front). If the readout says port 0 but the
   // cable visibly enters at the right, the index<->visual mapping is reversed
-  // in this Harmony build — report it.
+  // in this Harmony build â€” report it.
   function notesPortInfo(readPath) {
     try {
       var comp = findTopComposite();
@@ -612,7 +612,7 @@ function SyncNoteBeta() {
   }
 
   // Paint the Notes node in the SyncNote green (#4CAF50) so it's instantly
-  // recognizable in the Node View and Timeline. Applied on every launch —
+  // recognizable in the Node View and Timeline. Applied on every launch â€”
   // idempotent, and it heals scenes from pre-color builds or manual resets.
   function applyNotesColor(readPath) {
     try {
@@ -682,7 +682,7 @@ function SyncNoteBeta() {
 
   // Ensure a substitution STARTS at the given frame; return its drawing name.
   // Reuse only when a sub already begins exactly at this frame. If the frame
-  // merely continues an earlier drawing's exposure, split it with a new sub —
+  // merely continues an earlier drawing's exposure, split it with a new sub â€”
   // per the brief: "creates a drawing substitution wherever the playhead is."
   function ensureSubstitutionAtFrame(layer, atFrame) {
     var here = column.getEntry(layer.column, 1, atFrame);
@@ -739,9 +739,9 @@ function SyncNoteBeta() {
   }
 
   // Size of a drawing's file on disk, or -1 when unreadable. There is NO
-  // is-drawing-empty API (checked, KB §28), so blank-vs-drawn is judged by
+  // is-drawing-empty API (checked, KB Â§28), so blank-vs-drawn is judged by
   // file size: Drawing.create blanks are a few hundred bytes, brushwork
-  // adds kilobytes. NOTE: reflects the SAVED state — art drawn without the
+  // adds kilobytes. NOTE: reflects the SAVED state â€” art drawn without the
   // scene ever saving is invisible here (save-on-close makes this rare).
   function drawingArtBytes(elementId, drawingName) {
     var path = "";
@@ -753,7 +753,7 @@ function SyncNoteBeta() {
   }
 
   // Launch sweep (v0.23.0, silent by user choice): subs with zero notes
-  // AND zero artwork are accidents of the Add Note button — remove their
+  // AND zero artwork are accidents of the Add Note button â€” remove their
   // exposure. AND, never OR: notes-without-art and art-without-notes are
   // both legitimate review content. One undo step for the whole sweep;
   // drawing files are never deleted, so a false positive can't cost art.
@@ -791,7 +791,7 @@ function SyncNoteBeta() {
     trace("sweep: removed " + doomed.length + " abandoned sub(s): " + doomed.join(", "));
   }
 
-  // Erase the drawn content of EVERY sub in the Notes element — all four
+  // Erase the drawn content of EVERY sub in the Notes element â€” all four
   // art layers (0 underlay, 1 colour, 2 line, 3 overlay) per drawing via
   // DrawingTools.clearArt. Scoped to our element ID by construction, so
   // student artwork is untouchable. Config format is verified in docs but
@@ -823,10 +823,10 @@ function SyncNoteBeta() {
       }
     }
     trace("clearAllSubArt: " + cleared + " art layer(s) cleared" +
-          (failed ? ", " + failed + " FAILED (see KB §26 if this persists)" : ""));
+          (failed ? ", " + failed + " FAILED (see KB Â§26 if this persists)" : ""));
   }
 
-  // Remove ALL exposure from the Notes column — used by Clear Both for a
+  // Remove ALL exposure from the Notes column â€” used by Clear Both for a
   // full reset. (Drawing files stay in the element; with no exposure and
   // no notes they're hidden from the panel and render nothing.)
   function clearAllExposure(layer) {
@@ -839,11 +839,11 @@ function SyncNoteBeta() {
   }
 
   // One pass over the whole Notes column: per drawing, a LIST of contiguous
-  // exposure SPANS [{first,last},…] (v0.33.0). The old single {first,last}
+  // exposure SPANS [{first,last},â€¦] (v0.33.0). The old single {first,last}
   // pair was blind to gaps: a sub re-exposed later collapsed into one fake
   // range ("Frame 69 - 87" for 69-73 + 87) or a two-single-frame sub read
-  // as continuous ("Frame 90 - 100" for 90 + 100). A gap — any frame not
-  // showing the drawing — now starts a new span, feeding the "Frame 69 -
+  // as continuous ("Frame 90 - 100" for 90 + 100). A gap â€” any frame not
+  // showing the drawing â€” now starts a new span, feeding the "Frame 69 -
   // 73 & 87" headers, the scrub stops, and the staleness signature (so
   // re-exposure drags auto-refresh the panel too).
   function exposureMap(colName) {
@@ -863,7 +863,7 @@ function SyncNoteBeta() {
   }
 
   // Render a span list for headers / Copy All: "42", "42 - 43",
-  // "69 - 73 & 87", "90 & 100" — no zero-padding, single frames as bare
+  // "69 - 73 & 87", "90 & 100" â€” no zero-padding, single frames as bare
   // numbers, spans joined with " & " (v0.33.0 user spec).
   function spanText(spans) {
     var parts = [];
@@ -889,7 +889,7 @@ function SyncNoteBeta() {
       if (seen[dn]) continue;
       seen[dn] = true;
       var s1 = exp[dn];
-      // A drawing with no exposure AND no notes carries no information —
+      // A drawing with no exposure AND no notes carries no information â€”
       // hide it instead of cluttering the list with "(not exposed)" cards.
       if (!s1 && notesFor(model, layer.elementId, dn).length === 0) continue;
       groups.push({ drawing: dn, frame: s1 ? s1[0].first : -1, spans: s1 || [] });
@@ -919,7 +919,7 @@ function SyncNoteBeta() {
   // IMPORTANT Qt-binding rule (this crashed v1 AND v2):
   //   Harmony's QBoxLayout binding exposes ONLY the exact 3-arg
   //   addWidget(QWidget, int stretch, Alignment) overload. The 1-arg form
-  //   is hidden and a plain int does not convert to Alignment — the third
+  //   is hidden and a plain int does not convert to Alignment â€” the third
   //   argument must be a real Qt.Alignment value (evidence: openHarmony
   //   always calls addWidget(w, 0, Qt.AlignHCenter) and constructs flags
   //   with new Qt.WindowFlags(...)). Because this differs between engine
@@ -958,14 +958,14 @@ function SyncNoteBeta() {
   }
 
   // If a SyncNote panel is already open (even from a previous script engine),
-  // close it — its signal connections may be dead, so a fresh one is safer.
+  // close it â€” its signal connections may be dead, so a fresh one is safer.
   function closeExistingDialog() {
     try {
       var tls = QApplication.topLevelWidgets();
       for (var i = 0; i < tls.length; i++) {
         if (tls[i] && tls[i].objectName === DLG_NAME) {
           // Mark as an internal close (relaunch): the old panel's
-          // save-on-close must not fire — the new panel takes over.
+          // save-on-close must not fire â€” the new panel takes over.
           try { tls[i].setProperty("snSilentClose", true); } catch (e) {}
           tls[i].close();
           tls[i].deleteLater();
@@ -979,12 +979,12 @@ function SyncNoteBeta() {
     // garbage collector) in charge of the dialog's lifetime.
     var dlg = new QDialog(mainWindow());
     dlg.objectName = DLG_NAME;
-    dlg.setWindowTitle("SyncNote " + SN_VERSION + "  —  " + scene.currentScene());
+    dlg.setWindowTitle("SyncNote " + SN_VERSION + "  â€”  " + scene.currentScene());
     dlg.minimumWidth = 380;
     dlg.minimumHeight = 520;
-    // NOTE: no custom window icon — dlg.setWindowIcon is UNBOUND in
+    // NOTE: no custom window icon â€” dlg.setWindowIcon is UNBOUND in
     // Harmony's Qt Script (live TypeError, 2026-07-10). Case closed after
-    // three attempts; full history in KB §34. Don't reopen unless a future
+    // three attempts; full history in KB Â§34. Don't reopen unless a future
     // Harmony binds the call.
 
     var outer = new QVBoxLayout(dlg);
@@ -995,10 +995,10 @@ function SyncNoteBeta() {
     bar.setContentsMargins(0, 0, 0, 0);
     var addBtn = new QPushButton("Add Note");
     addBtn.toolTip = "Create a substitution at the current playhead frame";
-    var prevBtn = new QPushButton("◀");
+    var prevBtn = new QPushButton("â—€");
     prevBtn.toolTip = "Go to the previous note frame";
     prevBtn.maximumWidth = 36;
-    var nextBtn = new QPushButton("▶");
+    var nextBtn = new QPushButton("â–¶");
     nextBtn.toolTip = "Go to the next note frame";
     nextBtn.maximumWidth = 36;
     addW(bar, addBtn, 1);
@@ -1027,23 +1027,23 @@ function SyncNoteBeta() {
     // at any space, splitting phrases like "port 6 / of 7" mid-thought.
     // Wraps now happen only at the bullet separators.
     // NOTE: the replacement string below is a LITERAL U+00A0 (non-breaking
-    // space) — it looks identical to a plain space in most editors. Safe:
-    // this file is UTF-8 and Harmony reads it as such (see ✓ ✕ • glyphs).
-    function nb(s) { return String(s).replace(/ /g, " "); }
+    // space) â€” it looks identical to a plain space in most editors. Safe:
+    // this file is UTF-8 and Harmony reads it as such (see âœ“ âœ• â€¢ glyphs).
+    function nb(s) { return String(s).replace(/ /g, "Â "); }
     // ---- mode toggle (v0.34.0): Manual = today's behavior; Auto = a
     // click on empty list space starts a note at the playhead. A clickable
     // LABEL, deliberately not a button: label text swaps are safe on this
-    // engine, button label swaps glitch (KB §7.3.5).
+    // engine, button label swaps glitch (KB Â§7.3.5).
     var snMode = initialMode();
     var modeLbl = new QLabel("");
     modeLbl.toolTip = "Click to cycle modes.\n" +
                       "Manual: only the Add Note button creates notes.\n" +
                       "Hybrid: clicking empty panel space starts a note at " +
                       "the playhead.\n" +
-                      "Auto: the note prompt follows the playhead — change " +
+                      "Auto: the note prompt follows the playhead â€” change " +
                       "frames and type.";
     // Toggling fires from the hover filter's release (whole label = click
-    // target) with linkActivated kept as a fallback path — deduped, so
+    // target) with linkActivated kept as a fallback path â€” deduped, so
     // engines where both fire still toggle exactly once.
     var lastModeToggleMs = 0;
     function toggleMode() {
@@ -1095,7 +1095,7 @@ function SyncNoteBeta() {
     // Mode-link color is a tiny STATE MACHINE (beta.9 user spec): white
     // exactly while hovered-and-not-pressed; green at rest AND while the
     // button is held. State-driven render, so mode flips can't lose the
-    // hover state. Label text swaps are the SAFE kind (KB §7.3.5).
+    // hover state. Label text swaps are the SAFE kind (KB Â§7.3.5).
     var modeHovered = false;
     var modePressed = false;
     function updateModeLabel() {
@@ -1112,7 +1112,7 @@ function SyncNoteBeta() {
 
     // Hover/press watcher: Enter/Leave/Press/Release via the proven
     // filter machinery (not the unproven linkHovered signal). The
-    // release also TOGGLES — the whole label is the click target, and
+    // release also TOGGLES â€” the whole label is the click target, and
     // re-rendering the link's HTML on press could make linkActivated
     // unreliable, so we don't depend on it. Never consumes; pinned.
     try {
@@ -1148,9 +1148,9 @@ function SyncNoteBeta() {
     } catch (e) { /* linkActivated fallback still toggles */ }
 
     // Bottom strip, decluttered (beta.7, user design): the Layer/element/
-    // port debug readout lives behind the ⓘ button now; the strip keeps
+    // port debug readout lives behind the â“˜ button now; the strip keeps
     // only Mode + version + buttons. The stretch spacer soaks up the gap
-    // — and, being click-transparent, stays part of the Auto add-surface.
+    // â€” and, being click-transparent, stays part of the Auto add-surface.
     var stretchW = new QWidget();
     addW(bottom, stretchW, 1);
     var verLbl = new QLabel(nb("v" + SN_VERSION));
@@ -1158,13 +1158,13 @@ function SyncNoteBeta() {
     try { verLbl.textInteractionFlags = Qt.NoTextInteraction; } // click-through
     catch (e) { try { verLbl.textInteractionFlags = 0; } catch (e2) {} }
     addW(bottom, verLbl);
-    // (beta.8: the ⓘ popup is gone — it crowded Copy All / Clear all and
+    // (beta.8: the â“˜ popup is gone â€” it crowded Copy All / Clear all and
     // risked misclicks. The same info now leads the Message Log at launch.)
     var copyBtn = new QPushButton("Copy All");
-    copyBtn.toolTip = "Copy every note as plain text — paste into any app";
+    copyBtn.toolTip = "Copy every note as plain text â€” paste into any app";
     // Static label, no width pin (v0.20.1): on this engine pins only take
     // effect on the NEXT relayout, and the feedback text change was the
-    // relayout trigger — natural size at launch, snap-to-pin on click =
+    // relayout trigger â€” natural size at launch, snap-to-pin on click =
     // the "shrink". No text change + no pin = nothing ever moves.
     var clearBtn = new QPushButton("Clear all");
     clearBtn.toolTip = "Clear notes, sub art, or everything (asks first)";
@@ -1185,14 +1185,14 @@ function SyncNoteBeta() {
     var editDraft = null;     // mid-edit text captured across rebuilds
     var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
     var clickJumpArmed = 0;   // click-jump filters armed this refresh
-    var lastJumpMs = 0;       // one jump per click — a click bubbles
+    var lastJumpMs = 0;       // one jump per click â€” a click bubbles
                               // through nested cards, so card+group filters
                               // can both see the same release event
     var autoPending = null;   // HYBRID: {drawing, frame} click-created
                               // prompt that hasn't received text yet
     var lastAutoMs = 0;       // prompt-focus/add dedupe (clicks bubble)
     var promptFrame = -1;     // AUTO: frame the VIRTUAL prompt card is
-                              // rendered at — no sub exists until commit
+                              // rendered at â€” no sub exists until commit
     var promptTargetDrawing = null; // a sub already starts at promptFrame:
                                     // its own add box is the prompt
     var virtualDraft = null;  // prompt text preserved across rebuilds
@@ -1200,17 +1200,17 @@ function SyncNoteBeta() {
     var liveVirtualCard = null;  // ...and the card itself (scroll/flash)
     var liveVirtualHead = null;  // ...and its header label (in-place moves)
     var promptAnchor = "";    // drawing the virtual card sits BEFORE ("" =
-                              // end of list) — same anchor = same slot =
+                              // end of list) â€” same anchor = same slot =
                               // the card can move in place, no rebuild
     var lastKeyScrubMs = 0;   // last frame step via the prompt box's scrub
-                              // keys — rebuilds are DEFERRED while this is
+                              // keys â€” rebuilds are DEFERRED while this is
                               // fresh (key autorepeat's ~500 ms warm-up
                               // outlives the 300 ms debounce; a rebuild
                               // mid-hold destroys the focused box and
                               // kills the scrub)
 
     // Signature of the live timeline state the list depends on.
-    // signatureOf() reuses an already-collected groups array — refresh()
+    // signatureOf() reuses an already-collected groups array â€” refresh()
     // used to scan the whole column THREE times per rebuild (cards,
     // signature, scrub buttons); it now scans once (v0.35.0 perf).
     function signatureOf(groups) {
@@ -1229,15 +1229,15 @@ function SyncNoteBeta() {
     // group instead of restoring the previous scroll position (used by the
     // Add Note button so the new sub is immediately visible).
     function refresh(focusDrawing) {
-      var refT0 = (new Date()).getTime(); // beta.9: measure the rebuild —
+      var refT0 = (new Date()).getTime(); // beta.9: measure the rebuild â€”
       // adds feel slower as notes grow, and this number tells us how much
       // of that is the full-list rebuild before we optimize anything.
-      // Rebuilding the list resets the scroll position — remember it so
+      // Rebuilding the list resets the scroll position â€” remember it so
       // adding a note deep in the list doesn't yank the view around.
       var savedScroll = 0;
       try { savedScroll = scroll.verticalScrollBar().value; } catch (e) {}
 
-      // Capture mid-edit text — ONLY from the box that actually is the
+      // Capture mid-edit text â€” ONLY from the box that actually is the
       // editor. (The v0.21.1 failure: the stash captured from a box that
       // was not yet the editor, saving emptiness as the "draft".)
       try {
@@ -1273,7 +1273,7 @@ function SyncNoteBeta() {
 
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
-      trace("refresh: teardown done"); // crash breadcrumb (beta.2)
+      crumb("refresh: teardown done"); // crash breadcrumb
 
       clickJumpArmed = 0; // recounted as the cards below arm their filters
       var groups = collectGroups(layer, model);
@@ -1310,7 +1310,7 @@ function SyncNoteBeta() {
         trace("click-jump: " + clickJumpArmed + " filter(s) armed");
       }
       if (groups.length === 0 && !liveVirtualCard) {
-        var hint = new QLabel("No notes yet.\nMove the playhead and click “Add Note”.");
+        var hint = new QLabel("No notes yet.\nMove the playhead and click â€œAdd Noteâ€.");
         hint.wordWrap = true;
         try { hint.textInteractionFlags = Qt.NoTextInteraction; } // click-through
         catch (e) { try { hint.textInteractionFlags = 0; } catch (e2) {} }
@@ -1320,10 +1320,10 @@ function SyncNoteBeta() {
       // (Safer than addStretch(), which has its own binding quirks.)
       addW(listLayout, new QWidget(), 1);
 
-      shownSig = signatureOf(groups); // what the panel now reflects —
+      shownSig = signatureOf(groups); // what the panel now reflects â€”
       // derived from the groups already collected above (single scan)
       if (focusDrawing && liveGroups[focusDrawing]) {
-        focusGroup(focusDrawing); // don't restore old scroll — go to the card
+        focusGroup(focusDrawing); // don't restore old scroll â€” go to the card
       } else {
         restoreScroll(savedScroll);
       }
@@ -1339,7 +1339,7 @@ function SyncNoteBeta() {
 
       // Note boxes measure against the wrong wrap width until the layout
       // computes geometry (the tiny-scrollbox bug, understood since
-      // v0.21.1) — re-measure the whole batch once it has.
+      // v0.21.1) â€” re-measure the whole batch once it has.
       try {
         var mt;
         try { mt = new QTimer(dlg); }
@@ -1360,20 +1360,41 @@ function SyncNoteBeta() {
           // the 24px bottom margin. Unfixable on this engine: the only
           // trustworthy ruler needs QTextDocument.textWidth, whose setter
           // is silently unbound (readback proved twOK=false), so no
-          // width-constrained measurement exists — label- and card-level
-          // corrections are equally uncomputable. Full post-mortem: KB §33.
+          // width-constrained measurement exists â€” label- and card-level
+          // corrections are equally uncomputable. Full post-mortem: KB Â§33.
         });
         mt.start(60);
       } catch (e) { /* immediate sizing already happened per card */ }
     }
 
     // Deferred rebuild (v0.35.0): Enter-commits used to run refresh()
-    // from INSIDE the text box's own textChanged signal — tearing down
+    // from INSIDE the text box's own textChanged signal â€” tearing down
     // the emitting widget mid-dispatch, the prime suspect for the parked
-    // Enter crash (KB §41). A 0 ms single-shot lets the signal finish
+    // Enter crash (KB Â§41). A 0 ms single-shot lets the signal finish
     // first; typing also feels snappier because commit returns at once.
+    // Crash journal (beta.3): a hard crash kills Harmony's in-memory
+    // Message Log â€” and the breadcrumbs with it. Mirror them to a file
+    // so the LAST LINE survives the process. Rewritten per crumb (append
+    // mode is an unproven binding); commit-path only, so it's cheap.
+    var crumbLines = [];
+    var crumbFile = "";
+    try { crumbFile = String(specialFolders.temp) + "/syncnote_crashjournal.txt"; }
+    catch (e) { /* journal unavailable; Message Log only */ }
+    function crumb(msg) {
+      trace(msg);
+      if (!crumbFile) return;
+      try {
+        crumbLines.push(String(new Date().toTimeString()).substr(0, 8) + "  " + msg);
+        if (crumbLines.length > 40) crumbLines.shift();
+        var f = new File(crumbFile);
+        f.open(2); // write (truncate + rewrite whole journal)
+        f.write(crumbLines.join("\n") + "\n");
+        f.close();
+      } catch (e) { /* best-effort */ }
+    }
+
     // Run fn on the NEXT event-loop turn, outside whatever signal is
-    // currently dispatching (beta.2: not just the refresh — the whole
+    // currently dispatching (beta.2: not just the refresh â€” the whole
     // commit, scene writes included, moves out of the textChanged
     // signal; deferring only the refresh did not stop the Enter crash).
     function deferred(fn) {
@@ -1397,14 +1418,14 @@ function SyncNoteBeta() {
     }
 
     // Align a group card's top with the viewport top, so its header and
-    // "Add a note…" input land right under the toolbar (a fresh sub should
+    // "Add a noteâ€¦" input land right under the toolbar (a fresh sub should
     // appear next to the Add Note button, not somewhere mid-list).
     function scrollGroupToTop(drawingName) {
       var w = liveGroups[drawingName];
       if (!w) return;
       try {
         // Right after a rebuild the cards aren't measured yet and pos.y is
-        // garbage — which made "scroll to new note" only work when the bar
+        // garbage â€” which made "scroll to new note" only work when the bar
         // already sat at the top (garbage 0 = top, correct by luck).
         // Force the layout to compute geometry before reading positions.
         try { listLayout.activate(); } catch (e9) {}
@@ -1419,7 +1440,7 @@ function SyncNoteBeta() {
       } catch (e) { /* leave the panel scroll as-is */ }
     }
 
-    // Scroll a (usually new) group to the top and flash it — applied three
+    // Scroll a (usually new) group to the top and flash it â€” applied three
     // times (now, 60 ms, 250 ms): right after a rebuild the list may not be
     // measured yet and early scrolls can aim at stale positions, especially
     // while Harmony is busy.
@@ -1442,20 +1463,20 @@ function SyncNoteBeta() {
       }
     }
 
-    // Gray out ◀/▶ when there's no note strictly before/after the playhead.
+    // Gray out â—€/â–¶ when there's no note strictly before/after the playhead.
     // Uses the same data as the jump logic, so button state and jump
     // behavior can never disagree.
     function updateScrubButtons(knownGroups) {
       try {
         var f = frame.current();
-        // Callers that already collected the groups pass them in — the
+        // Callers that already collected the groups pass them in â€” the
         // scan is the expensive part (v0.35.0 perf).
         var groups = knownGroups || collectGroups(layer, model);
         var hasPrev = false;
         var hasNext = false;
         for (var i = 0; i < groups.length; i++) {
           // EVERY span start is a scrub stop (v0.33.0), matching
-          // scrubToNoteFrame — the two must never disagree.
+          // scrubToNoteFrame â€” the two must never disagree.
           var spans = groups[i].spans || [];
           for (var s = 0; s < spans.length; s++) {
             var g = spans[s].first;
@@ -1471,7 +1492,7 @@ function SyncNoteBeta() {
     }
 
     // Put the scrollbar back where it was: once immediately, and once after
-    // a short delay — the immediate set can be clamped because the rebuilt
+    // a short delay â€” the immediate set can be clamped because the rebuilt
     // list hasn't been measured yet. (Parented QTimer so it isn't GC'd;
     // same pattern openHarmony uses for its toasts.)
     function restoreScroll(v) {
@@ -1505,13 +1526,13 @@ function SyncNoteBeta() {
       var notes = notesFor(model, layer.elementId, drawingName);
 
       // Header row: green clickable "Frame 42" / "Frame 42 - 43" /
-      // "Frame 69 - 73 & 87" link — plain numbers with no zero-padding,
+      // "Frame 69 - 73 & 87" link â€” plain numbers with no zero-padding,
       // matching Harmony's own timeline fields (v0.26.0 user spec); every
       // contiguous exposure span is listed (v0.33.0), clicking always
       // jumps to the first. Plus, when the group has NO notes, a remove
       // button that deletes the sub itself.
       // Links stay as-is; v0.32.0 also revived card-wide click-to-jump
-      // (v0.8.x; the old flakiness was the GC bug, fixed by pinning) —
+      // (v0.8.x; the old flakiness was the GC bug, fixed by pinning) â€”
       // see armClickJump near makeEnterFilter.
       var headRowW = new QWidget();
       var headRow = new QHBoxLayout(headRowW);
@@ -1525,16 +1546,16 @@ function SyncNoteBeta() {
         head.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
         addW(headRow, head, 1);
       } else {
-        var deadHead = new QLabel("(not exposed on timeline)  •  Sub " + drawingName);
+        var deadHead = new QLabel("(not exposed on timeline)  â€¢  Sub " + drawingName);
         deadHead.styleSheet = "color: gray;";
         try { deadHead.textInteractionFlags = Qt.NoTextInteraction; } // click-through
         catch (e) { try { deadHead.textInteractionFlags = 0; } catch (e2) {} }
         addW(headRow, deadHead, 1);
       }
       if (notes.length === 0) {
-        // Only noteless groups are removable — a sub carrying notes can't
+        // Only noteless groups are removable â€” a sub carrying notes can't
         // be nuked by accident; delete its notes first.
-        var rmBtn = new QPushButton("✕");
+        var rmBtn = new QPushButton("âœ•");
         rmBtn.toolTip = "Remove this sub (it has no notes)";
         rmBtn.maximumWidth = 28;
         rmBtn.clicked.connect(function () {
@@ -1562,19 +1583,19 @@ function SyncNoteBeta() {
       var addRow = new QHBoxLayout(addRowW);
       addRow.setContentsMargins(0, 0, 0, 0);
       var input = new QTextEdit();
-      // Plain text only (v0.29.1): rich pastes (formatted text, images —
+      // Plain text only (v0.29.1): rich pastes (formatted text, images â€”
       // one memorably included an entire YouTube card) otherwise render
       // inside the box. Notes were always SAVED plain; now the box shows
       // what will actually be kept.
       try { input.acceptRichText = false; } catch (e) {}
       // Minimal placeholder (v0.31.2): the Enter/Shift+Enter tutorial has
-      // done its job — everyone knows the keys now, and the long hint
+      // done its job â€” everyone knows the keys now, and the long hint
       // bloated every group card.
-      try { input.placeholderText = "Add note…"; }
+      try { input.placeholderText = "Add noteâ€¦"; }
       catch (e) { /* placeholder not bound in some engines; cosmetic */ }
       // Dim the placeholder (SyncSketch-style: a hint shouldn't compete
       // with real notes). Placeholder color lives in a PALETTE slot, not
-      // stylesheets — programmatic set, unproven binding, fully guarded:
+      // stylesheets â€” programmatic set, unproven binding, fully guarded:
       // worst case the placeholder keeps its default brightness.
       try {
         var pal = input.palette;
@@ -1595,7 +1616,7 @@ function SyncNoteBeta() {
       addW(v, addRowW);
 
       // explicitText (optional): the text to save, bypassing input.plainText
-      // — the textChanged path passes the text as it was BEFORE the Enter's
+      // â€” the textChanged path passes the text as it was BEFORE the Enter's
       // newline was inserted, so the stray line break never persists.
       function commit(explicitText) {
         var txt = (explicitText !== undefined) ? explicitText : "";
@@ -1611,13 +1632,13 @@ function SyncNoteBeta() {
         try { input.plainText = ""; } catch (e) {}
         delete drafts[drawingName];
         deferred(function () {
-          trace("commit[add]: start (sub " + drawingName + ")");
+          crumb("commit[add]: start (sub " + drawingName + ")");
           addNote(model, layer.elementId, drawingName, txt);
-          trace("commit[add]: note added");
+          crumb("commit[add]: note added");
           saveModel(model);
-          trace("commit[add]: model saved");
+          crumb("commit[add]: model saved");
           refresh();
-          trace("commit[add]: refresh done");
+          crumb("commit[add]: refresh done");
         });
       }
       noteBtn.clicked.connect(function () { commit(); });
@@ -1630,7 +1651,7 @@ function SyncNoteBeta() {
 
       // Enter handling, fallback path + auto-grow: if the filter is inert,
       // the Enter lands as a newline in the text. Detect a single un-shifted
-      // Enter ANYWHERE (v0.28.2 — not just at the end) and commit the
+      // Enter ANYWHERE (v0.28.2 â€” not just at the end) and commit the
       // pre-newline text.
       var prevAddText = "";
       try { prevAddText = String(input.plainText); } catch (e) {}
@@ -1643,12 +1664,12 @@ function SyncNoteBeta() {
             return;
           }
           if (isEnterKeypress(prevAddText, t)) {
-            trace("Enter via fallback (add box) — saving");
+            trace("Enter via fallback (add box) â€” saving");
             commit(prevAddText);
             return;
           }
           if (looksLikeEnter(prevAddText, t)) {
-            trace("newline kept (add box) — shift detected"); // diagnostics
+            trace("newline kept (add box) â€” shift detected"); // diagnostics
           }
           prevAddText = t;
         } catch (e) { /* typing must never break */ }
@@ -1660,7 +1681,7 @@ function SyncNoteBeta() {
       if (frameNo > 0) {
         armClickJump(box, drawingName, frameNo, null, null);
         // The header label stretches across the whole top strip and (as a
-        // link-bearing QLabel) consumes clicks even BESIDE the link text —
+        // link-bearing QLabel) consumes clicks even BESIDE the link text â€”
         // they never bubble to the card filter. Arm it directly; a click
         // right on the link double-fires harmlessly (same jump target).
         armClickJump(head, drawingName, frameNo, null, null);
@@ -1672,7 +1693,7 @@ function SyncNoteBeta() {
       return box;
     }
 
-    // A single note card: "date • Sub N" meta line + text + delete.
+    // A single note card: "date â€¢ Sub N" meta line + text + delete.
     // "Sub N" is a jump link, same as the group header.
     function makeNoteCard(drawingName, frameNo, note) {
       var card = new QFrame();
@@ -1683,10 +1704,10 @@ function SyncNoteBeta() {
       var textCol = new QVBoxLayout(textColW);
       // Fixed 24px bottom margin (v0.28.3): short notes get a pleasant gap
       // below the text only as LEFTOVER space (the button column props the
-      // card open); long notes fill their card and looked crammed. 24px ≈
+      // card open); long notes fill their card and looked crammed. 24px â‰ˆ
       // that leftover, made structural for every line count. (12px was
       // tried in v0.27.1 and read too small; 24 was built in v0.27.3 but
-      // never tested before the rollback — this is that test.)
+      // never tested before the rollback â€” this is that test.)
       textCol.setContentsMargins(0, 0, 0, 24);
 
       // Sub link FIRST, date second (v0.22.2): the link then sits directly
@@ -1700,20 +1721,20 @@ function SyncNoteBeta() {
         metaHtml += '<span style="color:gray; font-size:10px;">Sub ' +
                     drawingName + "</span>";
       }
-      metaHtml += '<span style="color:gray; font-size:10px;">   •   ' +
+      metaHtml += '<span style="color:gray; font-size:10px;">   â€¢   ' +
                   relativeDate(note) + "</span>";
       var meta = new QLabel(metaHtml);
       if (frameNo > 0) meta.linkActivated.connect(makeJumpToSub(drawingName, frameNo));
       addW(textCol, meta);
 
       // ---- HYBRID text system (v0.25.0-beta): each card carries BOTH a
-      // real QLabel (display — pixel-identical to stable BY CONSTRUCTION,
+      // real QLabel (display â€” pixel-identical to stable BY CONSTRUCTION,
       // nothing to impersonate) and a native QTextEdit editor, hidden
-      // until ✎. Editing = a visibility flip: no rebuild, no layout
+      // until âœŽ. Editing = a visibility flip: no rebuild, no layout
       // surgery, no styling of native widgets, no pixel tuning.
       var isEditingThis = (editingNoteId === note.id);
 
-      var textLbl = new QLabel(renderNoteHtml(note.text)); // markers → rich
+      var textLbl = new QLabel(renderNoteHtml(note.text)); // markers â†’ rich
       textLbl.wordWrap = true;
       // Selectable + copyable (drag to select, Ctrl+C / right-click Copy).
       try { textLbl.textInteractionFlags = Qt.TextSelectableByMouse; }
@@ -1746,12 +1767,12 @@ function SyncNoteBeta() {
           try {
             var t = String(box.plainText);
             if (isEnterKeypress(prevEditText, t)) {
-              trace("Enter via fallback (edit box) — saving");
+              trace("Enter via fallback (edit box) â€” saving");
               finishEdit(true, prevEditText); // save the pre-newline text
               return;
             }
             if (looksLikeEnter(prevEditText, t)) {
-              trace("newline kept (edit box) — shift detected");
+              trace("newline kept (edit box) â€” shift detected");
             }
             prevEditText = t;
           } catch (e) { /* typing must never break */ }
@@ -1766,7 +1787,7 @@ function SyncNoteBeta() {
 
       // Pack meta + text to the TOP: when the button column is taller than
       // the text, the text column otherwise centers in the leftover space
-      // (inconsistent line starts across cards — v0.25.1 fix).
+      // (inconsistent line starts across cards â€” v0.25.1 fix).
       addW(textCol, new QWidget(), 1);
       addW(h, textColW, 1);
 
@@ -1796,11 +1817,11 @@ function SyncNoteBeta() {
         try { editBtn.toolTip = "Edit note"; } catch (e) {}
       };
 
-      var delBtn = new QPushButton("✕");
+      var delBtn = new QPushButton("âœ•");
       delBtn.toolTip = "Delete note";
       // Fixed geometry on BOTH right-column buttons: applying/removing a
       // stylesheet after show recomputes a button's size hint (the v0.14.3
-      // click-resize bug) — locking min=max makes restyles size-neutral.
+      // click-resize bug) â€” locking min=max makes restyles size-neutral.
       delBtn.minimumWidth = 28;
       delBtn.maximumWidth = 28;
       delBtn.minimumHeight = 20; // comfortable size restored (v0.25.1): the
@@ -1814,10 +1835,10 @@ function SyncNoteBeta() {
         };
       })(note.id, drawingName));
 
-      // ✎ between ✕ and ○: unlocks THIS box in place; clicking again
+      // âœŽ between âœ• and â—‹: unlocks THIS box in place; clicking again
       // cancels. One note at a time; Esc is deliberately not a cancel key
       // (it closes the whole panel).
-      var editBtn = new QPushButton("✎");
+      var editBtn = new QPushButton("âœŽ");
       editBtn.toolTip = isEditingThis ? "Cancel editing" : "Edit note";
       editBtn.minimumWidth = 28;
       editBtn.maximumWidth = 28;
@@ -1826,15 +1847,15 @@ function SyncNoteBeta() {
       editBtn.clicked.connect(function () {
         if (editingNoteId === note.id) { finishEdit(false); return; } // cancel
         if (editingNoteId !== null) {
-          trace("edit ignored — another note is being edited");
+          trace("edit ignored â€” another note is being edited");
           return;
         }
         editingNoteId = note.id;
         editDraft = null;
         if (!box) {
-          // First ✎ on this card: build the editor now and slot it in
+          // First âœŽ on this card: build the editor now and slot it in
           // ABOVE the trailing top-pack spacer (children: meta=0,
-          // label=1, spacer=2). Guarded — worst case the editor sits at
+          // label=1, spacer=2). Guarded â€” worst case the editor sits at
           // the card's bottom until the next rebuild.
           buildEditor(String(note.text));
           try {
@@ -1858,14 +1879,14 @@ function SyncNoteBeta() {
         trace("editing note " + note.id + " in place");
       });
 
-      // Done toggle, right under the ✕ — a NATIVE button just like it, so
+      // Done toggle, right under the âœ• â€” a NATIVE button just like it, so
       // shape, size, and hover thickness match by construction (custom
       // stylesheets are what caused the v0.14.2 misalignment/hover
-      // mismatch). ○ = open, green ✓ = done. Toggling restyles in place —
+      // mismatch). â—‹ = open, green âœ“ = done. Toggling restyles in place â€”
       // deliberately NO refresh(), so scroll/drafts/focus are untouched;
       // rebuilds re-read note.done from the model.
       var doneBtn = new QPushButton("");
-      doneBtn.minimumWidth = 28; // identical fixed geometry to the ✕ above
+      doneBtn.minimumWidth = 28; // identical fixed geometry to the âœ• above
       doneBtn.maximumWidth = 28;
       doneBtn.minimumHeight = 20;
       doneBtn.maximumHeight = 20;
@@ -1877,7 +1898,7 @@ function SyncNoteBeta() {
         dimNoteText(textLbl, note.done); // done notes read as "handled"
       });
 
-      // ✕ / ✎ / ○ stacked vertically at 28×20 each; spacer pins them top.
+      // âœ• / âœŽ / â—‹ stacked vertically at 28Ã—20 each; spacer pins them top.
       var rightColW = new QWidget();
       var rightCol = new QVBoxLayout(rightColW);
       rightCol.setContentsMargins(0, 0, 0, 0);
@@ -1889,7 +1910,7 @@ function SyncNoteBeta() {
       addW(h, rightColW);
 
       // ---- click-to-jump (v0.32.0): the whole note card is a jump target.
-      // ✕/✎/○ and the editor consume their own clicks, so they're exempt.
+      // âœ•/âœŽ/â—‹ and the editor consume their own clicks, so they're exempt.
       // The text label is SELECTION-AWARE: a plain click jumps, a drag-
       // select keeps working and never jumps (checked at mouse release).
       if (frameNo > 0) {
@@ -1907,7 +1928,7 @@ function SyncNoteBeta() {
 
     // Jump by DRAWING, not by a frame captured at build time: the sub's
     // first frame is recomputed at click time, so a sub moved on the
-    // timeline still navigates correctly — and if the recomputed frame
+    // timeline still navigates correctly â€” and if the recomputed frame
     // disagrees with what the card shows, the display heals itself.
     function makeJumpToSub(dn, shownFrame) {
       return function () {
@@ -1916,14 +1937,14 @@ function SyncNoteBeta() {
           frame.setCurrent(f);
           scrollTimelineToFrame(f); // bring the sub into the Timeline view
         }
-        if (f !== shownFrame) refresh(); // display was stale (also updates ◀/▶)
+        if (f !== shownFrame) refresh(); // display was stale (also updates â—€/â–¶)
         else updateScrubButtons();
       };
     }
 
     // Flash a white border on the card the arrow keys landed on, so it's
     // obvious where navigation went; fades automatically. Deliberately
-    // styling-only (no event filters — see the v0.8.x card-click saga);
+    // styling-only (no event filters â€” see the v0.8.x card-click saga);
     // the #id selector keeps the border off the note cards inside.
     function highlightGroup(drawingName) {
       clearHighlight();
@@ -1956,34 +1977,34 @@ function SyncNoteBeta() {
     }
 
     // Done-toggle styling: a NATIVE button (no border/shape stylesheets),
-    // so it renders, hovers, and presses exactly like the ✕ next to it.
-    // State is the glyph: ○ = open, bold green ✓ = done. The checked state
-    // sets only a text color — if that turns out to suppress the native
+    // so it renders, hovers, and presses exactly like the âœ• next to it.
+    // State is the glyph: â—‹ = open, bold green âœ“ = done. The checked state
+    // sets only a text color â€” if that turns out to suppress the native
     // hover on some engine, removing that one line is the fallback.
     function styleDoneToggle(btn, done) {
       try {
         if (done) {
-          btn.text = "✓";
-          btn.toolTip = "Done — click to reopen";
+          btn.text = "âœ“";
+          btn.toolTip = "Done â€” click to reopen";
           // Scoped to QPushButton: an unscoped stylesheet cascades into the
           // TOOLTIP too, rendering its text green-on-yellow (unreadable).
           btn.styleSheet = "QPushButton { color: " + SN_GREEN + "; font-weight: bold; }";
         } else {
-          btn.text = "○";
+          btn.text = "â—‹";
           btn.toolTip = "Mark as done";
           btn.styleSheet = "";
         }
       } catch (e) {
         // Styling refused by the engine: degrade to a plain text toggle.
-        try { btn.text = done ? "✓" : "○"; } catch (e2) {}
+        try { btn.text = done ? "âœ“" : "â—‹"; } catch (e2) {}
       }
     }
 
-    // Done notes read grayed-out — signals "handled, no need to re-read".
+    // Done notes read grayed-out â€” signals "handled, no need to re-read".
     // (The hybrid design retired styleNoteBox: display is a real QLabel,
-    // the editor is a fully native QTextEdit — nothing to impersonate.)
+    // the editor is a fully native QTextEdit â€” nothing to impersonate.)
     // BETA (markers): render **bold** / *italic* in the DISPLAY label only.
-    // Storage stays plain text — old notes untouched, the editor shows raw
+    // Storage stays plain text â€” old notes untouched, the editor shows raw
     // markers, Copy All is unchanged (Slack renders the markers natively).
     // Escape first so literal < > & in notes can't inject markup; newlines
     // become <br> (rich mode ignores \n); the <span> wrapper forces QLabel
@@ -2006,7 +2027,7 @@ function SyncNoteBeta() {
     // Falls back to a fixed 2-line height if document metrics aren't bound.
     // Optional minH: the ADD box keeps the 44px two-line floor; locked
     // note DISPLAY boxes pass 24 so one-liners don't carry empty slack
-    // (v0.24.4 — the "extra padding" was mostly this inherited floor).
+    // (v0.24.4 â€” the "extra padding" was mostly this inherited floor).
     function sizeNoteInput(edit, minH) {
       var floorH = (minH === undefined) ? 44 : minH;
       var h = floorH;
@@ -2024,13 +2045,13 @@ function SyncNoteBeta() {
     }
 
     // Event filter so Enter submits and Shift+Enter inserts a newline.
-    // Returns null if this engine can't build QObject-based filters — the
+    // Returns null if this engine can't build QObject-based filters â€” the
     // textChanged fallback in makeGroupWidget covers that case.
     // True when the change from `prev` to `now` is a single un-shifted
-    // Enter keypress inserted ANYWHERE — not just at the end. The old
+    // Enter keypress inserted ANYWHERE â€” not just at the end. The old
     // trailing-"\n" check only caught Enter at the END of the text, which
     // the add box always satisfies (cursor lives at the end) but editing
-    // almost never does — so mid-line Enter inserted a newline instead of
+    // almost never does â€” so mid-line Enter inserted a newline instead of
     // saving (v0.28.2). A lone Enter adds exactly one char and exactly one
     // newline; pastes and normal typing don't match. Shift is read from
     // the live keyboard state, the same mechanism the add box has trusted
@@ -2048,7 +2069,7 @@ function SyncNoteBeta() {
       if (!looksLikeEnter(prev, now)) return false;
       try {
         if (QApplication.keyboardModifiers() & Qt.ShiftModifier) return false;
-      } catch (e) { /* can't read shift → treat as Enter-save */ }
+      } catch (e) { /* can't read shift â†’ treat as Enter-save */ }
       return true;
     }
 
@@ -2061,10 +2082,10 @@ function SyncNoteBeta() {
               var k = event.key();
               if (k === Qt.Key_Return || k === Qt.Key_Enter) {
                 if (event.modifiers() & Qt.ShiftModifier) {
-                  trace("Shift+Enter via key filter — newline"); // diagnostics
+                  trace("Shift+Enter via key filter â€” newline"); // diagnostics
                   return false;
                 }
-                trace("Enter via key filter — saving"); // diagnostics: filter alive!
+                trace("Enter via key filter â€” saving"); // diagnostics: filter alive!
                 commitFn();
                 return true; // consume: Enter = save note
               }
@@ -2079,12 +2100,12 @@ function SyncNoteBeta() {
       }
     }
 
-    // ---- click-to-jump (v0.32.0 — revival of v0.8.x) --------------------
+    // ---- click-to-jump (v0.32.0 â€” revival of v0.8.x) --------------------
     // History: the v0.8.x "clicks randomly die" bug was the GC collecting
     // filter wrappers, fixed then (and doctrine ever since) by keep-alive
     // pinning. What made the feature FEEL unreliable was the patchwork:
     // selectable text consumed its clicks while the background jumped.
-    // This build arms the text label too — selection-aware, so dragging
+    // This build arms the text label too â€” selection-aware, so dragging
     // to select never jumps but a plain click does.
     //
     // Filters NEVER consume the event (return false always): buttons,
@@ -2098,7 +2119,7 @@ function SyncNoteBeta() {
     }
 
     // Children with no explicit cursor INHERIT the card's pointing hand
-    // (Qt cursor inheritance) — buttons should keep the default arrow.
+    // (Qt cursor inheritance) â€” buttons should keep the default arrow.
     function setArrowCursor(w) {
       try { w.cursor = new QCursor(Qt.ArrowCursor); } catch (e) {}
     }
@@ -2132,7 +2153,7 @@ function SyncNoteBeta() {
                 sel = (sel === true);
               } catch (e4) { sel = true; }
               if (sel) {
-                trace("click-jump: skipped — text selection active");
+                trace("click-jump: skipped â€” text selection active");
                 return false;
               }
             }
@@ -2146,7 +2167,7 @@ function SyncNoteBeta() {
                   (selLabel ? "note text" : "card"));
             makeJumpToSub(dn, shownFrame)();
           } catch (e) { /* clicking must never break the panel */ }
-          return false; // never consume — we only listen
+          return false; // never consume â€” we only listen
         };
         g_snKeepAlive.push(f); // pin or GC kills the override (v0.8.2 lesson)
         return f;
@@ -2156,14 +2177,14 @@ function SyncNoteBeta() {
     }
 
     // ---- Auto Mode (v0.34.0) -------------------------------------------
-    // The Create-phase loop, de-clunked: timeline click → one lazy click on
-    // any EMPTY list space → the note prompt appears at the playhead with
-    // the input already focused → type → Enter. No button sniping. Cards,
-    // buttons, links, and text keep their exact Manual behavior — the auto
+    // The Create-phase loop, de-clunked: timeline click â†’ one lazy click on
+    // any EMPTY list space â†’ the note prompt appears at the playhead with
+    // the input already focused â†’ type â†’ Enter. No button sniping. Cards,
+    // buttons, links, and text keep their exact Manual behavior â€” the auto
     // filter only reacts to clicks nothing else claimed.
 
     // Create (or reuse) the sub at the playhead and put the cursor in its
-    // add box — the Add Note button's flow plus focus.
+    // add box â€” the Add Note button's flow plus focus.
     function autoAddAtPlayhead() {
       var f = frame.current();
       cleanupPendingAuto(f); // an empty prompt at another frame dies now
@@ -2176,7 +2197,7 @@ function SyncNoteBeta() {
     }
 
     // Abandon an untouched Auto prompt: remove the sub again as if it was
-    // never created. Same AND-rule as the launch sweep — any note, any
+    // never created. Same AND-rule as the launch sweep â€” any note, any
     // draft text (live or stashed), or any art means it's real and stays.
     // exceptFrame: keep a prompt at that frame (it's being re-used).
     // quiet: skip the refresh (panel is closing).
@@ -2210,7 +2231,7 @@ function SyncNoteBeta() {
     // ---- Auto v2 (beta.10): the prompt FOLLOWS THE PLAYHEAD ------------
     // No click-in/click-out: when the playhead settles (debounced), a
     // VIRTUAL prompt card renders at that frame. No sub is created until
-    // the note commits — scrubbing writes NOTHING to the scene, and an
+    // the note commits â€” scrubbing writes NOTHING to the scene, and an
     // abandoned prompt costs nothing (there is nothing to clean up).
 
     function makeVirtualCard(vf) {
@@ -2219,7 +2240,7 @@ function SyncNoteBeta() {
       liveVirtualCard = card;
       liveGroups["__prompt__"] = card; // scroll/flash machinery lookup key
       // PERSISTENT white border (beta.16): the prompt's border is not a
-      // flash, it marks where the prompt lives — scrolling away and back
+      // flash, it marks where the prompt lives â€” scrolling away and back
       // must not lose it (user report). Distinct objectName keeps the
       // transient snGroupHL flash machinery from clearing it.
       try {
@@ -2242,7 +2263,7 @@ function SyncNoteBeta() {
       row.setContentsMargins(0, 0, 0, 0);
       var input = new QTextEdit();
       try { input.acceptRichText = false; } catch (e) {}
-      try { input.placeholderText = "Add note…"; } catch (e) {}
+      try { input.placeholderText = "Add noteâ€¦"; } catch (e) {}
       liveVirtualInput = input;
       if (virtualDraft) { // a rebuild interrupted typing: restore it
         try { input.plainText = virtualDraft; } catch (e) {}
@@ -2261,7 +2282,7 @@ function SyncNoteBeta() {
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
-        // The sub is born at COMMIT time, not prompt time — and (beta.2)
+        // The sub is born at COMMIT time, not prompt time â€” and (beta.2)
         // on the NEXT event-loop turn: ensureSubstitutionAtFrame does
         // real scene surgery (undo accum, Drawing.create, column write),
         // far too heavy to run inside a textChanged dispatch. Target
@@ -2270,19 +2291,19 @@ function SyncNoteBeta() {
         virtualDraft = null;
         try { input.plainText = ""; } catch (e) {}
         deferred(function () {
-          trace("commit[auto]: start (frame " + targetFrame + ")");
+          crumb("commit[auto]: start (frame " + targetFrame + ")");
           var dn = ensureSubstitutionAtFrame(layer, targetFrame);
-          trace("commit[auto]: sub ensured (" + dn + ")");
+          crumb("commit[auto]: sub ensured (" + dn + ")");
           if (!dn) return;
           addNote(model, layer.elementId, dn, txt);
-          trace("commit[auto]: note added");
+          crumb("commit[auto]: note added");
           saveModel(model);
-          trace("commit[auto]: model saved");
+          crumb("commit[auto]: model saved");
           refresh(dn);
-          trace("commit[auto]: refresh done");
+          crumb("commit[auto]: refresh done");
           // Stay in the cockpit: focus flows into the next prompt's box.
           focusPrompt();
-          trace("commit[auto]: focus done");
+          crumb("commit[auto]: focus done");
         });
       }
       noteBtn.clicked.connect(function () { commitVirtual(); });
@@ -2297,7 +2318,7 @@ function SyncNoteBeta() {
           var t = String(input.plainText);
           if (handleScrubChars(input, prevTxt, t)) { prevTxt = ""; return; }
           if (isEnterKeypress(prevTxt, t)) {
-            trace("Enter via fallback (prompt box) — saving");
+            trace("Enter via fallback (prompt box) â€” saving");
             commitVirtual(prevTxt);
             return;
           }
@@ -2309,12 +2330,12 @@ function SyncNoteBeta() {
     }
 
     // Scrub characters, via the key path that actually WORKS (v0.34.1):
-    // key events never reach script filters on this engine (KB §40), so
-    // the old filter-based scrub passthrough was inert — with a box
+    // key events never reach script filters on this engine (KB Â§40), so
+    // the old filter-based scrub passthrough was inert â€” with a box
     // focused, , . < > typed literally and autorepeat spammed them. The
     // textChanged fallback is the mechanism this engine honors (it's how
     // Enter saves): in Auto mode, when an add box's content becomes ONLY
-    // scrub characters, they were frame steps — perform them and clear
+    // scrub characters, they were frame steps â€” perform them and clear
     // the box. A held key streams characters; each one steps.
     function handleScrubChars(box, prev, now) {
       if (snMode !== "auto") return false;
@@ -2336,12 +2357,12 @@ function SyncNoteBeta() {
 
     // Move the prompt WITHOUT rebuilding (beta.15): when only the prompt
     // frame changed and the card keeps its slot between the same
-    // neighbors, rewrite the header label in place — the SAFE kind of
+    // neighbors, rewrite the header label in place â€” the SAFE kind of
     // text swap. The reported blink was a full ~40 ms rebuild on every
     // scrub settle (seventeen in a row in the log); short scrubs now
     // touch one label and nothing else, and the box keeps focus since it
     // is never destroyed. Returns false when the structure really
-    // changed (new slot, or a sub starts at the new frame) — callers
+    // changed (new slot, or a sub starts at the new frame) â€” callers
     // fall back to a full refresh.
     function tryMovePromptInPlace() {
       try {
@@ -2370,7 +2391,7 @@ function SyncNoteBeta() {
       } catch (e) { return false; }
     }
 
-    // The playhead settled somewhere new: move the prompt — unless the
+    // The playhead settled somewhere new: move the prompt â€” unless the
     // box holds half-typed text (typing is intent; never yank a draft
     // out from under the user). Returns true when the prompt moved.
     function syncPromptFrame() {
@@ -2390,12 +2411,12 @@ function SyncNoteBeta() {
     }
 
     // Scroll to + flash the prompt; move the keyboard into its box ONLY
-    // when SyncNote's window is already the active one — stealing
+    // when SyncNote's window is already the active one â€” stealing
     // activation while the user works in Harmony is an unwinnable OS
-    // fight (measured: focus IN → OUT within 4 ms; Windows protects the
+    // fight (measured: focus IN â†’ OUT within 4 ms; Windows protects the
     // foreground window). One click/activation enters the cockpit; from
-    // there type→Enter→scrub-keys→type loops with zero further clicks.
-    // True when the card is entirely inside the viewport — the anti-jank
+    // there typeâ†’Enterâ†’scrub-keysâ†’type loops with zero further clicks.
+    // True when the card is entirely inside the viewport â€” the anti-jank
     // gate (beta.14): a 1-3 frame scrub usually leaves the prompt already
     // on screen, and pinning it to the top anyway (with the 60/250 ms
     // re-aims) read as jitter. Misjudgment is safe either way: "not
@@ -2473,18 +2494,18 @@ function SyncNoteBeta() {
 
     // Background-click filter, installed on BOTH the list host and the
     // dialog itself (beta.2): a click nothing interactive claims bubbles
-    // up to whichever of the two owns that region — list interior to the
+    // up to whichever of the two owns that region â€” list interior to the
     // host, everything else (toolbar gaps, bottom strip, window margins)
     // to the dialog. beta.1 only listened on the host, so the add-surface
     // shrank to the space below the cards as the list filled. Both can
     // see the same bubbled click; lastAutoMs makes it one add. A click a
     // card claimed set lastJumpMs microseconds ago (child filters run
-    // before the event bubbles here) — that click means "jump", never
+    // before the event bubbles here) â€” that click means "jump", never
     // "add". (Panel-lifetime: host and dlg survive refreshes.)
     try {
       // Press fallback: Harmony sometimes delivers a background click's
       // PRESS but never its RELEASE (log-proven), so every background
-      // press arms a 250 ms timer — if no release, jump, or add follows,
+      // press arms a 250 ms timer â€” if no release, jump, or add follows,
       // the press itself completes the click. Card presses are safe:
       // their release fires the jump and the timer stands down.
       var pressTimer = null;
@@ -2501,7 +2522,7 @@ function SyncNoteBeta() {
                 if (snMode === "manual") return;
                 if (lastAutoMs >= pressAt || lastJumpMs >= pressAt) return;
                 lastAutoMs = (new Date()).getTime();
-                trace("auto click: release never delivered — press fallback");
+                trace("auto click: release never delivered â€” press fallback");
                 if (snMode === "hybrid") autoAddAtPlayhead();
                 else focusPrompt();
               } catch (e) {}
@@ -2543,12 +2564,12 @@ function SyncNoteBeta() {
             focusPrompt();
           }
         } catch (e) { /* clicking must never break the panel */ }
-        return false; // never consume — we only listen
+        return false; // never consume â€” we only listen
       };
       host.installEventFilter(autoF);
       try { dlg.installEventFilter(autoF); } catch (e9) {}
-      // §38's lesson applied forward (beta.5): widgets that might swallow
-      // unclaimed clicks get the filter DIRECTLY — it never consumes, so
+      // Â§38's lesson applied forward (beta.5): widgets that might swallow
+      // unclaimed clicks get the filter DIRECTLY â€” it never consumes, so
       // arming broadly is free. (Deliberately NOT on card widgets: their
       // jump filters would race this one on the same release.)
       try { toolbarW.installEventFilter(autoF); } catch (e9a) {}
@@ -2557,18 +2578,18 @@ function SyncNoteBeta() {
       try { stretchW.installEventFilter(autoF); } catch (e9d) {}
       g_snKeepAlivePanel.push(autoF);
     } catch (e) {
-      trace("auto mode: click filter unavailable (" + e + ") — Add Note " +
+      trace("auto mode: click filter unavailable (" + e + ") â€” Add Note " +
             "button still works");
     }
 
-    // Title-bar re-entry (beta.3): the OS owns the title bar — its clicks
+    // Title-bar re-entry (beta.3): the OS owns the title bar â€” its clicks
     // never reach Qt on ANY engine, so no filter can hear them. Geometry
     // is the side door: when the window ACTIVATES in Auto Mode and the
     // cursor sits in the title band (inside the frame, above the client
-    // area), the activation click was the title bar — treat it as an add.
+    // area), the activation click was the title bar â€” treat it as an add.
     // Known quirk, accepted: grabbing an INACTIVE panel's title bar to
     // drag it also adds (the empty prompt self-cleans on the next
-    // deactivate/playhead move). All bindings first-use and guarded —
+    // deactivate/playhead move). All bindings first-use and guarded â€”
     // failure = title bar stays add-deaf, everything else unaffected.
     var titleWarned = false;
     function maybeTitleBarAdd() {
@@ -2604,13 +2625,13 @@ function SyncNoteBeta() {
       var nowMs = (new Date()).getTime();
       if (nowMs - lastAutoMs < 300) return;
       lastAutoMs = nowMs;
-      trace("auto mode: title-bar re-entry — note prompt");
+      trace("auto mode: title-bar re-entry â€” note prompt");
       autoAddAtPlayhead();
     }
 
     // Window watcher: DEACTIVATE abandons an empty prompt (spec: leaving
     // the window = never mind); ACTIVATE runs the title-bar check above.
-    // Guarded first-use bindings — if these events never arrive on this
+    // Guarded first-use bindings â€” if these events never arrive on this
     // engine, the playhead-move cleanup in the staleness timer remains.
     try {
       var winF = new QObject(dlg);
@@ -2637,12 +2658,12 @@ function SyncNoteBeta() {
       g_snKeepAlivePanel.push(winF);
     } catch (e) { /* lazy cleanup paths remain */ }
 
-    // NOTE: the Enter "summon key" (beta.16) is RETIRED WITH CAUSE — the
+    // NOTE: the Enter "summon key" (beta.16) is RETIRED WITH CAUSE â€” the
     // app-level event filter it required made Harmony sluggish,
     // delivered unreliably, and CRASHED Harmony with nothing in the log.
     // A script-side QObject filtering every application event is now a
     // documented landmine: DO NOT install app-level event filters.
-    // History in KB §40; the removed code is at commit 7be1378.
+    // History in KB Â§40; the removed code is at commit 7be1378.
 
     addBtn.clicked.connect(function () {
       var f = frame.current();
@@ -2686,7 +2707,7 @@ function SyncNoteBeta() {
     // SceneChangeNotifier.columnValuesChanged fires whenever exposure data
     // changes (e.g. a sub dragged to another frame in the timeline). We
     // debounce it, then rebuild ONLY if the displayed frames actually went
-    // stale — so our own writes (already followed by refresh) and unrelated
+    // stale â€” so our own writes (already followed by refresh) and unrelated
     // column edits are no-ops, and typing is never interrupted needlessly.
     function scheduleStalenessCheck() {
       try {
@@ -2698,13 +2719,13 @@ function SyncNoteBeta() {
             try {
               if (editingNoteId !== null) {
                 // Never rebuild under someone's cursor mid-edit; check
-                // again shortly — it catches up after save/cancel.
+                // again shortly â€” it catches up after save/cancel.
                 trace("auto-refresh deferred (a note is being edited)");
                 scheduleStalenessCheck();
                 return;
               }
               // AUTO: while the scrub keys are actively firing, hold ALL
-              // rebuild work — a rebuild mid-hold destroys the focused
+              // rebuild work â€” a rebuild mid-hold destroys the focused
               // prompt box and the held key dies with it. The prompt
               // appears once scrubbing pauses (user spec).
               if (snMode === "auto" &&
@@ -2712,7 +2733,7 @@ function SyncNoteBeta() {
                 scheduleStalenessCheck();
                 return;
               }
-              // HYBRID: playhead moved away from an untouched prompt —
+              // HYBRID: playhead moved away from an untouched prompt â€”
               // the user moved on; abandon it. A prompt at the CURRENT
               // frame is the one being worked on; keep it.
               if (snMode === "hybrid") cleanupPendingAuto(frame.current());
@@ -2720,7 +2741,7 @@ function SyncNoteBeta() {
               var promptMoved = syncPromptFrame();
               if (groupsSignature() !== shownSig) {
                 trace("timeline changed under the panel (via " + lastSignal +
-                      ") — auto-refreshing");
+                      ") â€” auto-refreshing");
                 refresh(); // refresh() updates the scrub buttons too
                 if (promptMoved) focusPrompt();
               } else if (promptMoved) {
@@ -2744,8 +2765,8 @@ function SyncNoteBeta() {
 
     // No column filtering (v0.10.1): the signal may carry internal column
     // names that don't match ours, which silently killed auto-refresh in
-    // v0.10.0. False alarms are free — the staleness check only rebuilds
-    // when the displayed frames genuinely changed — so listen broadly and
+    // v0.10.0. False alarms are free â€” the staleness check only rebuilds
+    // when the displayed frames genuinely changed â€” so listen broadly and
     // let the signature comparison be the gatekeeper.
     var colSignalLogged = false;
     function onTimelineMaybeChanged(signalName) {
@@ -2783,10 +2804,10 @@ function SyncNoteBeta() {
         });
       } catch (e2) { /* signal not bound in this engine */ }
       g_snKeepAlivePanel.push(notifier); // pin: script QObject, GC rules apply
-      trace("SceneChangeNotifier active — listening: columnValuesChanged, " +
+      trace("SceneChangeNotifier active â€” listening: columnValuesChanged, " +
             "sceneChanged, currentFrameChanged");
     } catch (e) {
-      trace("SceneChangeNotifier unavailable (" + e + ") — falling back to " +
+      trace("SceneChangeNotifier unavailable (" + e + ") â€” falling back to " +
             "click-time self-heal only");
     }
 
@@ -2794,7 +2815,7 @@ function SyncNoteBeta() {
     function buildDigest() {
       var lines = [];
       var now = new Date();
-      lines.push("SyncNote — " + scene.currentScene() + " (" +
+      lines.push("SyncNote â€” " + scene.currentScene() + " (" +
                  now.getFullYear() + "-" + pad(now.getMonth() + 1, 2) + "-" +
                  pad(now.getDate(), 2) + ")");
       var groups = collectGroups(layer, model);
@@ -2821,11 +2842,11 @@ function SyncNoteBeta() {
     // in a selectable box for a manual Ctrl+C.
     function showDigestFallback(digest) {
       var d = new QDialog(dlg);
-      d.setWindowTitle("SyncNote — Copy Notes");
+      d.setWindowTitle("SyncNote â€” Copy Notes");
       d.minimumWidth = 380;
       d.minimumHeight = 300;
       var v = new QVBoxLayout(d);
-      var hint = new QLabel("Clipboard unavailable on this engine — select " +
+      var hint = new QLabel("Clipboard unavailable on this engine â€” select " +
                             "the text below and press Ctrl+C:");
       hint.wordWrap = true;
       addW(v, hint);
@@ -2851,7 +2872,7 @@ function SyncNoteBeta() {
         QApplication.clipboard().setText(digest);
         ok = true;
       } catch (e) {
-        trace("clipboard unavailable (" + e + ") — showing manual-copy dialog");
+        trace("clipboard unavailable (" + e + ") â€” showing manual-copy dialog");
       }
       if (!ok) { showDigestFallback(digest); return; }
       trace("notes digest copied to clipboard (" + digest.length + " chars)");
@@ -2860,7 +2881,7 @@ function SyncNoteBeta() {
     // ---- Clear all (v0.19.0): confirmation with a keyboard default ----
     // Own QDialog instead of MessageBox: we need four choices, a reliable
     // Enter default, and known return semantics. Subs are NEVER deleted
-    // here — notes and/or the art inside the subs, per user decision.
+    // here â€” notes and/or the art inside the subs, per user decision.
     function askClearChoice() {
       var d = new QDialog(dlg);
       d.setWindowTitle("Clear SyncNote data");
@@ -2914,7 +2935,7 @@ function SyncNoteBeta() {
       } catch (e) {
         scene.endUndoRedoAccum();
       }
-      trace("clear (" + mode + ") done — one undo step");
+      trace("clear (" + mode + ") done â€” one undo step");
       if (mode === "both") {
         // Full reset ends the review session: close the panel (which also
         // routes through save-on-close, landing the reset on disk).
@@ -2929,14 +2950,14 @@ function SyncNoteBeta() {
       if (mode) doClear(mode);
     });
 
-    // ---- self-updater (v0.30.0, KB §36) --------------------------------
+    // ---- self-updater (v0.30.0, KB Â§36) --------------------------------
     // At every launch, quietly download the release-branch script to temp
-    // (curl via Process2 — probe-proven; curl ships on Win10+ AND macOS,
+    // (curl via Process2 â€” probe-proven; curl ships on Win10+ AND macOS,
     // one identical command). A timer then verifies the download REALLY is
     // our script before anything else happens: a 404/proxy page can never
     // touch the installed file (curl -f writes nothing on HTTP errors, and
-    // content is sniffed anyway). Newer version → the status bar's version
-    // text becomes a "New Update Available" link → confirm → install →
+    // content is sniffed anyway). Newer version â†’ the status bar's version
+    // text becomes a "New Update Available" link â†’ confirm â†’ install â†’
     // "restart Harmony". First-ever launch on a machine force-updates once
     // (preferences flag, set only after a SUCCESSFUL check or install).
     var updateTmp = "";
@@ -2956,7 +2977,7 @@ function SyncNoteBeta() {
     function readWholeFile(path) {
       try {
         var f = new File(path);
-        f.open(1); // read mode — probe-proven
+        f.open(1); // read mode â€” probe-proven
         var s = String(f.read());
         f.close();
         return s;
@@ -2983,25 +3004,25 @@ function SyncNoteBeta() {
         t.singleShot = true;
         t.timeout.connect(onUpdateDownloaded);
         t.start(4000); // probe: download completed in <1s; generous slack
-        trace("update check: querying the release channel…");
+        trace("update check: querying the release channelâ€¦");
       } catch (e) { trace("update check error (" + e + ")"); }
     }
 
     function onUpdateDownloaded() {
       try {
         if (!(new QFileInfo(updateTmp).exists())) {
-          trace("update check: no response (offline or channel unavailable) — will retry next launch");
+          trace("update check: no response (offline or channel unavailable) â€” will retry next launch");
           return;
         }
         var content = readWholeFile(updateTmp);
         if (!content || content.indexOf("function SyncNote") < 0) {
-          trace("update check: download failed verification — ignored");
+          trace("update check: download failed verification â€” ignored");
           cleanupUpdateTmp();
           return;
         }
         var m = content.match(/SN_VERSION\s*=\s*"([^"]+)"/);
         if (!m) {
-          trace("update check: no version in download — ignored");
+          trace("update check: no version in download â€” ignored");
           cleanupUpdateTmp();
           return;
         }
@@ -3011,12 +3032,12 @@ function SyncNoteBeta() {
           cleanupUpdateTmp();
           return;
         }
-        // v0.30.4 (user design): ALWAYS auto-update — no ask, no first-run
+        // v0.30.4 (user design): ALWAYS auto-update â€” no ask, no first-run
         // flag (whose preferences persistence proved unreliable across
         // restarts anyway). The dialog afterward only offers WHEN to start
         // using the new version: relaunch now, or finish on the old one.
         updateRemote = { version: remoteVer, content: content };
-        trace("newer release v" + remoteVer + " — auto-updating");
+        trace("newer release v" + remoteVer + " â€” auto-updating");
         doInstall();
       } catch (e) { trace("update processing error (" + e + ")"); }
     }
@@ -3031,10 +3052,10 @@ function SyncNoteBeta() {
     function reportInstall(ok) {
       if (ok) {
         cleanupUpdateTmp();
-        trace("updated to v" + updateRemote.version + " — relaunch to load it");
+        trace("updated to v" + updateRemote.version + " â€” relaunch to load it");
         // Post-update choice (v0.30.4, user design): the update is already
         // installed; the only question is when to start using it. Modal
-        // child dialog — Escape rejects only this dialog (= Keep Working).
+        // child dialog â€” Escape rejects only this dialog (= Keep Working).
         try {
           var d = new QDialog(dlg);
           d.setWindowTitle("SyncNote Update");
@@ -3042,7 +3063,7 @@ function SyncNoteBeta() {
           var v = new QVBoxLayout(d);
           var lbl = new QLabel(
             "SyncNote has been updated.\n\n" +
-            "v" + SN_VERSION + "  →  v" + updateRemote.version + "\n\n" +
+            "v" + SN_VERSION + "  â†’  v" + updateRemote.version + "\n\n" +
             "Relaunch SyncNote to use the new version, or keep working.\n" +
             "This window stays on v" + SN_VERSION + " until relaunched.");
           lbl.wordWrap = true;
@@ -3066,7 +3087,7 @@ function SyncNoteBeta() {
           }
         } catch (e) {}
       } else {
-        trace("UPDATE FAILED: could not write the new version — install manually");
+        trace("UPDATE FAILED: could not write the new version â€” install manually");
         try {
           MessageBox.information(
             "The update could not be installed automatically.\n" +
@@ -3082,7 +3103,7 @@ function SyncNoteBeta() {
       catch (e0) {}
       if (!target) { trace("update install: no userScripts folder"); return; }
 
-      // Attempt 1: direct File write (cross-platform; unproven binding —
+      // Attempt 1: direct File write (cross-platform; unproven binding â€”
       // the readback below is the arbiter, not the API's word).
       try {
         var f = new File(target);
@@ -3094,7 +3115,7 @@ function SyncNoteBeta() {
 
       // Attempt 2: OS copy of the already-verified temp file (Process2 is
       // probe-proven), then re-verify after a beat.
-      trace("update install: File.write didn't verify — trying OS copy");
+      trace("update install: File.write didn't verify â€” trying OS copy");
       var copyCmd;
       var win = false;
       try { win = about.isWindowsArch(); } catch (e2) {}
@@ -3116,31 +3137,31 @@ function SyncNoteBeta() {
       vt.start(2000);
     }
 
-    // BETA: no update check — the beta must never touch the installed
+    // BETA: no update check â€” the beta must never touch the installed
     // SyncNote.js, and its version string would confuse the comparison.
-    trace("beta build — update check disabled");
+    trace("beta build â€” update check disabled");
 
     // ---- save-on-close (v0.16.0, user decision: option A) ----
     // Closing the panel saves the scene so notes reach disk without anyone
-    // remembering Ctrl+S — but only when it's actually needed:
+    // remembering Ctrl+S â€” but only when it's actually needed:
     //   - notes changed this session (g_snNotesDirty), AND
     //   - the scene still has unsaved changes (a manual Ctrl+S clears both).
     // Relaunch-closes are marked snSilentClose and skipped. At most one
-    // save per session-close — no xstage churn.
+    // save per session-close â€” no xstage churn.
     // NOTE: saveAll() commits the WHOLE scene, not just notes. If teachers
-    // prefer confirming, the prompt variant is documented in the KB (§25).
+    // prefer confirming, the prompt variant is documented in the KB (Â§25).
     // NOTE: two-stage Escape (leave the box first, close second) was
     // attempted (beta.18/.19) and REMOVED by user call. Engine fact
     // learned: this Harmony delivers mouse/focus events to script
     // filters but NOT key events (why Enter always saves via the
-    // textChanged fallback) — Escape has no such fallback. Esc closes
-    // the panel, as it always has. History in KB §40.
+    // textChanged fallback) â€” Escape has no such fallback. Esc closes
+    // the panel, as it always has. History in KB Â§40.
 
     dlg.rejected.connect(function () {
       try {
         try { if (dlg.property("snSilentClose")) return; } catch (e0) {}
         // An untouched Auto prompt dies with the panel (quiet: no rebuild
-        // of a closing dialog) — before the dirty check, so the removal
+        // of a closing dialog) â€” before the dirty check, so the removal
         // itself is included in the save below.
         try { cleanupPendingAuto(undefined, true); } catch (e1) {}
         if (!g_snNotesDirty) return; // nothing of ours to persist
@@ -3150,14 +3171,14 @@ function SyncNoteBeta() {
         var ok = false;
         try { ok = scene.saveAll(); } catch (e2) {}
         if (ok) g_snNotesDirty = false;
-        trace(ok ? "panel closed — scene saved (notes persisted)"
-                 : "panel closed — auto-save FAILED; save manually to keep notes");
+        trace(ok ? "panel closed â€” scene saved (notes persisted)"
+                 : "panel closed â€” auto-save FAILED; save manually to keep notes");
       } catch (e) { /* closing must never be blocked */ }
     });
 
     refresh();
     // Open AT the minimum width (v0.31.3): Qt otherwise opens new windows
-    // at the content's size hint, which is wider than our minimum — so the
+    // at the content's size hint, which is wider than our minimum â€” so the
     // status bar wrapped differently on a fresh open vs. after the user
     // nudged the edge to the true minimum. Guarded: failure = hint sizing.
     try { dlg.resize(dlg.minimumWidth, 560); } catch (e) {}
@@ -3171,7 +3192,7 @@ function SyncNoteBeta() {
   // =======================================================================
   // Every step guarded (beta.6): a single already-deleted widget in the
   // layout used to throw ("cannot access member 'hide' of deleted
-  // QObject") and ABORT the whole teardown mid-refresh — the list stayed
+  // QObject") and ABORT the whole teardown mid-refresh â€” the list stayed
   // half-built and the post-refresh scroll/focus never ran. One dead
   // widget must never cost the rest of the rebuild.
   function clearLayout(layout) {
@@ -3205,14 +3226,14 @@ function SyncNoteBeta() {
     return s;
   }
 
-  // Dump the composite input port map to the Message Log — passive
+  // Dump the composite input port map to the Message Log â€” passive
   // diagnostics for the backburnered "Notes lands at the back" issue.
   function logPortMap() {
     try {
       var comp = findTopComposite();
       if (!comp) return;
       var ports = node.numberOfInputPorts(comp);
-      var lines = ["SyncNote " + SN_VERSION + " — port map of " + comp + ":"];
+      var lines = ["SyncNote " + SN_VERSION + " â€” port map of " + comp + ":"];
       for (var i = 0; i < ports; i++) {
         lines.push("   port " + i + "  <-  " + node.srcNode(comp, i));
       }
