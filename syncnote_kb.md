@@ -803,6 +803,21 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 
 **SECOND BLESSING — v0.31.4 (2026-07-10):** carries the minimal dimmed "Add note…" placeholder and open-at-minimum-width. First blessing to reach teachers via the UPDATER rather than a zip: everyone on 0.31.0/0.31.1 gets the auto-update dialog on next launch. Ritual ran clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, one version line, fix present).
 
+## 40. Auto Mode — v0.34.0-beta series, IN PROGRESS (2026-07-26)
+
+Create-phase de-clunking: a Manual/Auto toggle (clickable status-strip label, hover-white state machine); in Auto, any click on a non-interactive part of the window creates a note prompt at the playhead with the input focused, and an untouched prompt self-deletes (launch-sweep AND-rule). Confirmed working through beta.9. **ROLLBACK POINT: beta.9 = commit 0a74a7a** — click-triggered Auto Mode, fully functional.
+
+Hard-won findings (each cost a beta):
+- **Harmony sometimes delivers a click's PRESS but never its RELEASE** (proven by instrumentation: press–press–silence in the bottom window region). Release-only triggers silently lose those clicks → the auto filter arms a 250 ms press-fallback timer; jump/add activity cancels it.
+- **Plain QLabels can swallow clicks they do nothing with** (§38's family): the status label deadened most of the bottom strip. Fix: `textInteractionFlags = NoTextInteraction` on every non-interactive label + arm the filter directly on strip widgets.
+- **Title-bar clicks never reach Qt** (OS-owned). Side door: on WindowActivate, if `QCursor.pos()` sits inside `frameGeometry` above `geometry.y` (client top), the activation click was the title bar → treat as add. All bindings work on Harmony 22.
+- **clearLayout could abort mid-teardown** on one deleted widget ("cannot access member 'hide' of deleted QObject"), leaving the list half-built and killing the post-refresh scroll/focus. Now per-item guarded (beta.6). This bug predates Auto Mode.
+- Mode policy constants (`SN_DEFAULT_MODE`, `SN_REMEMBER_MODE_IN_SCENE`) isolate launch-default / per-scene-memory changes to one line.
+
+**PERF BASELINE (beta.9 instrumentation, 2026-07-26):** full-list rebuild per add is LINEAR in content — measured 6 ms @ 1 group/1 note → ~45 ms @ 5 groups/8 notes → 105 ms @ 13 groups/17 notes (~7 ms/group; each note card carries a hidden QTextEdit editor, roughly doubling widget count). Not an Auto Mode regression — the architecture has always done this; Auto Mode made adds frequent enough to feel it. First planned fix: lazy editor creation (editor built only when ✎ clicked). `refresh:` trace lines stay in until perf is settled.
+
+**PLANNED v2 (user direction, 2026-07-26):** clicking in and out of the panel is still clunky — the prompt should follow the TIMELINE: on debounced currentFrameChanged in Auto Mode, render a **VIRTUAL prompt card** at the playhead frame (no sub created — the sub is created only when the note is committed). This DELETES the entire empty-prompt cleanup subsystem by design (nothing exists to clean up), makes scrubbing free of scene writes/undo pollution, and reuses the proven notifier + refresh machinery. Open question at time of writing: focus policy (steal focus to the prompt box on frame settle vs. prompt-visible-but-focus-stays-in-Harmony).
+
 ## 39. Span-aware exposure model — v0.33.0, SHIPPED + BLESSED (2026-07-13)
 
 Zack found `exposureMap`'s blind spot the same day 0.32.0 shipped: it stored one `{first, last}` pair per drawing, blind to gaps. Two faces of the same bug: a sub on 69-73 re-exposed at 87 rendered "Frame 69 - 87" (the re-exposure invisible as its own location), and a sub on single frames 90 + 100 rendered "Frame 90 - 100" (two dots masquerading as a range).
