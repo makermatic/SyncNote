@@ -45,7 +45,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.35.0-beta.1";   // PERFORMANCE BETA (2026-07-26)
+  var SN_VERSION    = "0.35.0-beta.2";   // PERFORMANCE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1273,6 +1273,7 @@ function SyncNoteBeta() {
 
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
+      trace("refresh: teardown done"); // crash breadcrumb (beta.2)
 
       clickJumpArmed = 0; // recounted as the cards below arm their filters
       var groups = collectGroups(layer, model);
@@ -1371,22 +1372,28 @@ function SyncNoteBeta() {
     // the emitting widget mid-dispatch, the prime suspect for the parked
     // Enter crash (KB §41). A 0 ms single-shot lets the signal finish
     // first; typing also feels snappier because commit returns at once.
-    function scheduleRefresh(focusDrawing, thenFn) {
+    // Run fn on the NEXT event-loop turn, outside whatever signal is
+    // currently dispatching (beta.2: not just the refresh — the whole
+    // commit, scene writes included, moves out of the textChanged
+    // signal; deferring only the refresh did not stop the Enter crash).
+    function deferred(fn) {
       try {
         var t;
         try { t = new QTimer(dlg); } catch (e0) { t = new QTimer(); }
         g_snKeepAlive.push(t);
         t.singleShot = true;
-        t.timeout.connect(function () {
-          try { refresh(focusDrawing); } catch (e) {}
-          if (thenFn) { try { thenFn(); } catch (e) {} }
-        });
+        t.timeout.connect(function () { try { fn(); } catch (e) {} });
         t.start(0);
       } catch (e) {
-        // No timer on this engine: the old direct path, crash risk and all.
-        refresh(focusDrawing);
-        if (thenFn) { try { thenFn(); } catch (e2) {} }
+        try { fn(); } catch (e2) {} // no timer: direct, crash risk and all
       }
+    }
+
+    function scheduleRefresh(focusDrawing, thenFn) {
+      deferred(function () {
+        refresh(focusDrawing);
+        if (thenFn) { try { thenFn(); } catch (e) {} }
+      });
     }
 
     // Align a group card's top with the viewport top, so its header and
@@ -1597,13 +1604,21 @@ function SyncNoteBeta() {
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
-        addNote(model, layer.elementId, drawingName, txt);
-        saveModel(model);
-        // Empty the box before refresh so the draft-stash doesn't re-save
-        // the just-committed text as an unsaved draft.
+        // Empty the box first so the draft-stash can't re-save the
+        // committed text; everything heavy runs on the next event-loop
+        // turn, outside this signal. Breadcrumb traces (beta.2): if a
+        // crash strikes, the log's LAST line names the killing step.
         try { input.plainText = ""; } catch (e) {}
         delete drafts[drawingName];
-        scheduleRefresh(); // deferred: never rebuild mid-signal
+        deferred(function () {
+          trace("commit[add]: start (sub " + drawingName + ")");
+          addNote(model, layer.elementId, drawingName, txt);
+          trace("commit[add]: note added");
+          saveModel(model);
+          trace("commit[add]: model saved");
+          refresh();
+          trace("commit[add]: refresh done");
+        });
       }
       noteBtn.clicked.connect(function () { commit(); });
 
@@ -2246,22 +2261,28 @@ function SyncNoteBeta() {
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
-        // The sub is born HERE — at commit time, not prompt time. Target
-        // promptFrame (live), not the captured vf: in-place moves slide
-        // the card to new frames without rebuilding it (beta.15).
-        var dn = ensureSubstitutionAtFrame(layer, promptFrame);
-        if (!dn) return;
-        addNote(model, layer.elementId, dn, txt);
-        saveModel(model);
+        // The sub is born at COMMIT time, not prompt time — and (beta.2)
+        // on the NEXT event-loop turn: ensureSubstitutionAtFrame does
+        // real scene surgery (undo accum, Drawing.create, column write),
+        // far too heavy to run inside a textChanged dispatch. Target
+        // promptFrame captured now, in case the prompt moves meanwhile.
+        var targetFrame = promptFrame;
         virtualDraft = null;
         try { input.plainText = ""; } catch (e) {}
-        trace("auto: note committed at frame " + promptFrame +
-              " (sub " + dn + ")");
-        scheduleRefresh(dn, function () {
-          // Stay in the cockpit: our window is active (the user just
-          // typed here), so focus flows into the next prompt's box —
-          // type → Enter → scrub keys → type, zero clicks.
+        deferred(function () {
+          trace("commit[auto]: start (frame " + targetFrame + ")");
+          var dn = ensureSubstitutionAtFrame(layer, targetFrame);
+          trace("commit[auto]: sub ensured (" + dn + ")");
+          if (!dn) return;
+          addNote(model, layer.elementId, dn, txt);
+          trace("commit[auto]: note added");
+          saveModel(model);
+          trace("commit[auto]: model saved");
+          refresh(dn);
+          trace("commit[auto]: refresh done");
+          // Stay in the cockpit: focus flows into the next prompt's box.
           focusPrompt();
+          trace("commit[auto]: focus done");
         });
       }
       noteBtn.clicked.connect(function () { commitVirtual(); });
