@@ -42,7 +42,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0";          // BLESSED TEACHER RELEASE (2026-07-26)
+  var SN_VERSION    = "0.34.1";          // scrub-chars fix (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -69,9 +69,9 @@ function SyncNote() {
   var SN_DEFAULT_MODE = "manual";           // "manual" | "hybrid" | "auto"
   var SN_REMEMBER_MODE_IN_SCENE = false;    // true = per-scene stickiness
   // Auto focus policy: "steal" moves the keyboard into the prompt box
-  // when the playhead settles (an EMPTY box passes < > , . and arrow keys
-  // through as real frame steps, so keyboard scrubbing survives the
-  // steal); "off" = prompt follows visibly, a click on the panel focuses.
+  // when the playhead settles (an empty box turns , . < > into real
+  // frame steps — see handleScrubChars — so keyboard scrubbing survives
+  // the steal); "off" = prompt follows, a click on the panel focuses.
   var SN_AUTO_FOCUS = "steal";              // "steal" | "off"
 
   // ---------------------------------------------------------------------
@@ -1599,6 +1599,10 @@ function SyncNote() {
         sizeNoteInput(input);
         try {
           var t = String(input.plainText);
+          if (handleScrubChars(input, prevAddText, t)) {
+            prevAddText = "";
+            return;
+          }
           if (isEnterKeypress(prevAddText, t)) {
             trace("Enter via fallback (add box) — saving");
             commit(prevAddText);
@@ -2225,7 +2229,7 @@ function SyncNote() {
       }
       noteBtn.clicked.connect(function () { commitVirtual(); });
 
-      var kf = makePromptKeyFilter(input, function () { commitVirtual(); });
+      var kf = makeEnterFilter(function () { commitVirtual(); });
       if (kf) { try { input.installEventFilter(kf); } catch (e) {} }
       var prevTxt = "";
       try { prevTxt = String(input.plainText); } catch (e) {}
@@ -2233,6 +2237,7 @@ function SyncNote() {
         sizeNoteInput(input);
         try {
           var t = String(input.plainText);
+          if (handleScrubChars(input, prevTxt, t)) { prevTxt = ""; return; }
           if (isEnterKeypress(prevTxt, t)) {
             trace("Enter via fallback (prompt box) — saving");
             commitVirtual(prevTxt);
@@ -2245,73 +2250,30 @@ function SyncNote() {
       return card;
     }
 
-    // Enter machinery + SCRUB PASSTHROUGH (user concern: < > scrubbing
-    // must survive the focus steal): while the prompt box is EMPTY, the
-    // frame-step keys — , . < > and the left/right arrows — act as real
-    // frame steps instead of typing. A box with text types normally.
-    function makePromptKeyFilter(input, commitFn) {
-      try {
-        // One reusable refocus timer per prompt box: frame.setCurrent can
-        // pull keyboard focus to Harmony after a step, and the key
-        // autorepeat that starts ~500 ms into a HOLD then streams at a
-        // dead widget (the hold-only-advances-one-frame bug). Re-grab
-        // focus 50 ms after each step — well inside the warm-up.
-        var refocus = null;
-        try {
-          try { refocus = new QTimer(dlg); }
-          catch (e0) { refocus = new QTimer(); }
-          refocus.singleShot = true;
-          refocus.timeout.connect(function () {
-            try { input.setFocus(); }
-            catch (e1) { try { input.setFocus(7); } catch (e2) {} }
-          });
-          g_snKeepAlive.push(refocus);
-        } catch (e) { refocus = null; }
-
-        var f = new QObject(dlg);
-        f.eventFilter = function (watched, event) {
-          try {
-            var et = -1;
-            try { et = Number(event.type()); } catch (e0) { return false; }
-            var kp = 6;
-            try { kp = Number(QEvent.KeyPress) || 6; } catch (e0b) {}
-            if (et === kp) {
-              var k = event.key();
-              if (k === Qt.Key_Return || k === Qt.Key_Enter) {
-                if (event.modifiers() & Qt.ShiftModifier) return false;
-                commitFn();
-                return true;
-              }
-              var empty = false;
-              try {
-                empty = String(input.plainText).replace(/\s/g, "") === "";
-              } catch (e1) {}
-              if (empty) {
-                function K(name, dflt) {
-                  try { return Number(Qt[name]) || dflt; }
-                  catch (e) { return dflt; }
-                }
-                var dir = 0;
-                if (k === K("Key_Comma", 44) || k === K("Key_Less", 60) ||
-                    k === K("Key_Left", 16777234)) dir = -1;
-                else if (k === K("Key_Period", 46) ||
-                         k === K("Key_Greater", 62) ||
-                         k === K("Key_Right", 16777236)) dir = 1;
-                if (dir !== 0) {
-                  lastKeyScrubMs = (new Date()).getTime(); // hold the rebuild
-                  var nf = frame.current() + dir;
-                  if (nf >= 1 && nf <= frame.numberOf()) frame.setCurrent(nf);
-                  if (refocus) { refocus.stop(); refocus.start(50); }
-                  return true; // consumed: it scrubbed, it doesn't type
-                }
-              }
-            }
-          } catch (e) { /* never block typing */ }
-          return false;
-        };
-        g_snKeepAlive.push(f); // pin or GC kills the override
-        return f;
-      } catch (e) { return null; }
+    // Scrub characters, via the key path that actually WORKS (v0.34.1):
+    // key events never reach script filters on this engine (KB §40), so
+    // the old filter-based scrub passthrough was inert — with a box
+    // focused, , . < > typed literally and autorepeat spammed them. The
+    // textChanged fallback is the mechanism this engine honors (it's how
+    // Enter saves): in Auto mode, when an add box's content becomes ONLY
+    // scrub characters, they were frame steps — perform them and clear
+    // the box. A held key streams characters; each one steps.
+    function handleScrubChars(box, prev, now) {
+      if (snMode !== "auto") return false;
+      if (!/^[,.<>]+$/.test(now)) return false;
+      if (prev !== "" && !/^[,.<>]+$/.test(prev)) return false;
+      var steps = now.length - prev.length;
+      if (steps <= 0) steps = 1;
+      var ch = now.charAt(now.length - 1);
+      var dir = (ch === "," || ch === "<") ? -1 : 1;
+      lastKeyScrubMs = (new Date()).getTime(); // hold rebuilds mid-scrub
+      var nf = frame.current() + dir * steps;
+      if (nf < 1) nf = 1;
+      var maxF = frame.numberOf();
+      if (nf > maxF) nf = maxF;
+      frame.setCurrent(nf);
+      try { box.plainText = ""; } catch (e) {} // the chars were steps
+      return true;
     }
 
     // Move the prompt WITHOUT rebuilding (beta.15): when only the prompt
