@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.7";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.8";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -87,6 +87,11 @@ function SyncNoteBeta() {
       return;
     }
     var connectStatus = connectNotesNode(layer.node); // wire + verify by RENDER ORDER
+    // The launch info line (beta.8, user design): the Layer/element/port
+    // readout that used to clutter the bottom strip now leads the log.
+    // (The version is already in every line's prefix.)
+    trace("Layer: " + layer.node + "  •  element #" + layer.elementId +
+          "  •  " + notesPortInfo(layer.node));
     trace("connection: " + connectStatus); // verdict lives in the Message Log
     applyNotesColor(layer.node); // paint it SyncNote green, every run
 
@@ -1057,14 +1062,41 @@ function SyncNoteBeta() {
       trace("mode switched to " + m);
     }
 
-    function updateModeLabel() {
+    // hovered: render the link white — SyncSketch-style "I'm clickable"
+    // feedback. Clicking re-renders via setMode() with no argument, which
+    // snaps it back to green even while the mouse is still on it (the
+    // next Enter event would re-whiten, but a settled click reads green —
+    // user spec). Label text swaps are the SAFE kind (KB §7.3.5).
+    function updateModeLabel(hovered) {
       try {
         modeLbl.text =
           '<span style="color: gray; font-size: 10px;">Mode: </span>' +
-          '<a href="#" style="' + LINK_STYLE + ' font-size: 10px;">' +
+          '<a href="#" style="color: ' + (hovered ? "#ffffff" : SN_GREEN) +
+          '; text-decoration:none; font-size: 10px;">' +
           (snMode === "auto" ? "Auto" : "Manual") + '</a>';
       } catch (e) {}
     }
+
+    // Hover watcher: Enter/Leave events (types 10/11 — ancient, reliable
+    // Qt) via the proven filter machinery, not the unproven linkHovered
+    // signal. Never consumes; pinned for the panel's lifetime.
+    try {
+      var hovF = new QObject(dlg);
+      hovF.eventFilter = function (watched, event) {
+        try {
+          var t = Number(event.type());
+          var ent = 10;
+          try { ent = Number(QEvent.Enter) || 10; } catch (e0) {}
+          var lea = 11;
+          try { lea = Number(QEvent.Leave) || 11; } catch (e1) {}
+          if (t === ent) updateModeLabel(true);
+          else if (t === lea) updateModeLabel(false);
+        } catch (e) {}
+        return false;
+      };
+      modeLbl.installEventFilter(hovF);
+      g_snKeepAlivePanel.push(hovF);
+    } catch (e) { /* toggle works without the hover flourish */ }
 
     // Bottom strip, decluttered (beta.7, user design): the Layer/element/
     // port debug readout lives behind the ⓘ button now; the strip keeps
@@ -1077,33 +1109,8 @@ function SyncNoteBeta() {
     try { verLbl.textInteractionFlags = Qt.NoTextInteraction; } // click-through
     catch (e) { try { verLbl.textInteractionFlags = 0; } catch (e2) {} }
     addW(bottom, verLbl);
-    var infoBtn = new QPushButton("ⓘ");
-    infoBtn.toolTip = "Layer, element, and port details";
-    infoBtn.minimumWidth = 28;  // card-button size: present, not shouting
-    infoBtn.maximumWidth = 28;
-    infoBtn.minimumHeight = 20;
-    infoBtn.maximumHeight = 20;
-    infoBtn.clicked.connect(function () {
-      var d = new QDialog(dlg);
-      d.setWindowTitle("SyncNote Info");
-      d.minimumWidth = 300;
-      var v = new QVBoxLayout(d);
-      // Port info recomputed at click time, so a reconnect between opens
-      // shows current truth, not launch-time truth.
-      var lbl = new QLabel(
-        "Layer:  " + layer.node + "\n" +
-        "Element:  #" + layer.elementId + "\n" +
-        "Port:  " + notesPortInfo(layer.node) + "\n" +
-        "Version:  v" + SN_VERSION);
-      lbl.wordWrap = true;
-      try { lbl.textInteractionFlags = Qt.TextSelectableByMouse; } catch (e) {}
-      addW(v, lbl);
-      var closeBtn = new QPushButton("Close");
-      closeBtn.clicked.connect(function () { d.accept(); });
-      addW(v, closeBtn);
-      d.exec();
-    });
-    addW(bottom, infoBtn);
+    // (beta.8: the ⓘ popup is gone — it crowded Copy All / Clear all and
+    // risked misclicks. The same info now leads the Message Log at launch.)
     var copyBtn = new QPushButton("Copy All");
     copyBtn.toolTip = "Copy every note as plain text — paste into any app";
     // Static label, no width pin (v0.20.1): on this engine pins only take
