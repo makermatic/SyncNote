@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.11";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.12";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2227,10 +2227,35 @@ function SyncNoteBeta() {
     // frame steps instead of typing. A box with text types normally.
     function makePromptKeyFilter(input, commitFn) {
       try {
+        // One reusable refocus timer per prompt box: frame.setCurrent can
+        // pull keyboard focus to Harmony after a step, and the key
+        // autorepeat that starts ~500 ms into a HOLD then streams at a
+        // dead widget (the hold-only-advances-one-frame bug). Re-grab
+        // focus 50 ms after each step — well inside the warm-up.
+        var refocus = null;
+        try {
+          try { refocus = new QTimer(dlg); }
+          catch (e0) { refocus = new QTimer(); }
+          refocus.singleShot = true;
+          refocus.timeout.connect(function () {
+            try { input.setFocus(); }
+            catch (e1) { try { input.setFocus(7); } catch (e2) {} }
+          });
+          g_snKeepAlive.push(refocus);
+        } catch (e) { refocus = null; }
+
         var f = new QObject(dlg);
         f.eventFilter = function (watched, event) {
           try {
-            if (event.type() === QEvent.KeyPress) {
+            var et = -1;
+            try { et = Number(event.type()); } catch (e0) { return false; }
+            // Focus diagnostics (beta.12): the log shows exactly when the
+            // box gains/loses the keyboard — the scrub-death arbiter.
+            if (et === 8) { trace("prompt box: focus IN"); return false; }
+            if (et === 9) { trace("prompt box: focus OUT"); return false; }
+            var kp = 6;
+            try { kp = Number(QEvent.KeyPress) || 6; } catch (e0b) {}
+            if (et === kp) {
               var k = event.key();
               if (k === Qt.Key_Return || k === Qt.Key_Enter) {
                 if (event.modifiers() & Qt.ShiftModifier) return false;
@@ -2240,7 +2265,7 @@ function SyncNoteBeta() {
               var empty = false;
               try {
                 empty = String(input.plainText).replace(/\s/g, "") === "";
-              } catch (e0) {}
+              } catch (e1) {}
               if (empty) {
                 function K(name, dflt) {
                   try { return Number(Qt[name]) || dflt; }
@@ -2256,6 +2281,8 @@ function SyncNoteBeta() {
                   lastKeyScrubMs = (new Date()).getTime(); // hold the rebuild
                   var nf = frame.current() + dir;
                   if (nf >= 1 && nf <= frame.numberOf()) frame.setCurrent(nf);
+                  trace("scrub key: step to frame " + frame.current());
+                  if (refocus) { refocus.stop(); refocus.start(50); }
                   return true; // consumed: it scrubbed, it doesn't type
                 }
               }
