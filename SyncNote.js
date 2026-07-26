@@ -42,7 +42,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.2";          // Tab = typing mode (2026-07-26)
+  var SN_VERSION    = "0.34.3";          // visible prompt pulse (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2349,12 +2349,52 @@ function SyncNote() {
         if (liveVirtualInput &&
             String(liveVirtualInput.plainText)
               .replace(/^\s+|\s+$/g, "") !== "") {
+          trace("prompt pinned at frame " + promptFrame +
+                " — draft in progress");
           return false; // draft in progress: the prompt stays put
         }
       } catch (e) {}
       promptFrame = f;
       scrubTypingMode = false; // new prompt location: scrub keys scrub
       return true;
+    }
+
+    // Visible pulse on every prompt move (v0.34.3): an in-place move
+    // only changes the header number, and the virtual card is exempt
+    // from the transient flash (its persistent border would be
+    // overwritten) — so mouse-driven moves LOOKED dead. The border now
+    // flares green briefly, then settles back to white.
+    var promptFlashTimer = null;
+    function flashPromptCard() {
+      if (promptTargetDrawing) { // a real group is the prompt: normal flash
+        try { highlightGroup(promptTargetDrawing); } catch (e) {}
+        return;
+      }
+      if (!liveVirtualCard) return;
+      try {
+        liveVirtualCard.styleSheet =
+          "#snPromptHL { border: 2px solid " + SN_GREEN +
+          "; border-radius: 3px; }";
+      } catch (e) { return; }
+      try {
+        if (!promptFlashTimer) {
+          try { promptFlashTimer = new QTimer(dlg); }
+          catch (e0) { promptFlashTimer = new QTimer(); }
+          promptFlashTimer.singleShot = true;
+          promptFlashTimer.timeout.connect(function () {
+            try {
+              if (liveVirtualCard) {
+                liveVirtualCard.styleSheet =
+                  "#snPromptHL { border: 1px solid #ffffff; " +
+                  "border-radius: 3px; }";
+              }
+            } catch (e) {}
+          });
+          g_snKeepAlivePanel.push(promptFlashTimer);
+        }
+        promptFlashTimer.stop();
+        promptFlashTimer.start(600);
+      } catch (e) { /* pulse cosmetic only */ }
     }
 
     // Scroll to + flash the prompt; move the keyboard into its box ONLY
@@ -2392,9 +2432,10 @@ function SyncNote() {
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
       var w = liveGroups[key];
       if (w && groupFullyVisible(w)) {
-        try { highlightGroup(key); } catch (e) {} // on screen: flash, no yank
+        try { flashPromptCard(); } catch (e) {} // on screen: pulse, no yank
       } else {
         try { focusGroup(key); } catch (e) {}
+        try { flashPromptCard(); } catch (e) {}
       }
       if (SN_AUTO_FOCUS !== "steal") return;
       var active = false;
