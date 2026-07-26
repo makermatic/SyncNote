@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.9";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.10";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -62,8 +62,17 @@ function SyncNoteBeta() {
   // switch to true and the last-used mode rides in the scene's metadata
   // instead (survives restarts because the SCENE remembers — Harmony's
   // own preferences storage is unreliable across restarts, KB §36).
-  var SN_DEFAULT_MODE = "manual";           // "manual" | "auto"
+  // THREE modes (user design, 2026-07-26): "manual" = classic buttons;
+  // "hybrid" = v1 Auto (a click on any non-interactive spot creates the
+  // note prompt at the playhead); "auto" = v2 (the prompt FOLLOWS the
+  // playhead — virtual card, no sub until the note commits).
+  var SN_DEFAULT_MODE = "manual";           // "manual" | "hybrid" | "auto"
   var SN_REMEMBER_MODE_IN_SCENE = false;    // true = per-scene stickiness
+  // Auto focus policy: "steal" moves the keyboard into the prompt box
+  // when the playhead settles (an EMPTY box passes < > , . and arrow keys
+  // through as real frame steps, so keyboard scrubbing survives the
+  // steal); "off" = prompt follows visibly, a click on the panel focuses.
+  var SN_AUTO_FOCUS = "steal";              // "steal" | "off"
 
   // ---------------------------------------------------------------------
   // Entry
@@ -1034,9 +1043,12 @@ function SyncNoteBeta() {
     // engine, button label swaps glitch (KB §7.3.5).
     var snMode = initialMode();
     var modeLbl = new QLabel("");
-    modeLbl.toolTip = "Auto: click empty space in the list to start a note " +
-                      "at the playhead.\nManual: only the Add Note button " +
-                      "creates notes.";
+    modeLbl.toolTip = "Click to cycle modes.\n" +
+                      "Manual: only the Add Note button creates notes.\n" +
+                      "Hybrid: clicking empty panel space starts a note at " +
+                      "the playhead.\n" +
+                      "Auto: the note prompt follows the playhead — change " +
+                      "frames and type.";
     // Toggling fires from the hover filter's release (whole label = click
     // target) with linkActivated kept as a fallback path — deduped, so
     // engines where both fire still toggle exactly once.
@@ -1045,7 +1057,8 @@ function SyncNoteBeta() {
       var n = (new Date()).getTime();
       if (n - lastModeToggleMs < 200) return;
       lastModeToggleMs = n;
-      setMode(snMode === "auto" ? "manual" : "auto");
+      setMode(snMode === "manual" ? "hybrid"
+            : snMode === "hybrid" ? "auto" : "manual");
     }
     modeLbl.linkActivated.connect(toggleMode);
     updateModeLabel();
@@ -1054,7 +1067,8 @@ function SyncNoteBeta() {
     function initialMode() {
       try {
         if (SN_REMEMBER_MODE_IN_SCENE &&
-            (model.lastMode === "auto" || model.lastMode === "manual")) {
+            (model.lastMode === "auto" || model.lastMode === "hybrid" ||
+             model.lastMode === "manual")) {
           return model.lastMode;
         }
       } catch (e) {}
@@ -1062,12 +1076,27 @@ function SyncNoteBeta() {
     }
 
     function setMode(m) {
+      var prev = snMode;
       snMode = m;
       if (SN_REMEMBER_MODE_IN_SCENE) {
         try { model.lastMode = m; saveModel(model); } catch (e) {}
       }
       updateModeLabel();
       trace("mode switched to " + m);
+      // Mode-transition housekeeping: leaving Hybrid abandons an empty
+      // click-prompt; entering Auto spawns the follow-prompt; leaving
+      // Auto removes the virtual card.
+      try {
+        if (prev === "hybrid") cleanupPendingAuto();
+        if (m === "auto") {
+          syncPromptFrame();
+          refresh();
+          focusPrompt();
+        } else if (prev === "auto") {
+          promptFrame = -1;
+          refresh();
+        }
+      } catch (e) {}
     }
 
     // Mode-link color is a tiny STATE MACHINE (beta.9 user spec): white
@@ -1083,7 +1112,8 @@ function SyncNoteBeta() {
           '<span style="color: gray; font-size: 10px;">Mode: </span>' +
           '<a href="#" style="color: ' + (white ? "#ffffff" : SN_GREEN) +
           '; text-decoration:none; font-size: 10px;">' +
-          (snMode === "auto" ? "Auto" : "Manual") + '</a>';
+          (snMode === "auto" ? "Auto"
+            : snMode === "hybrid" ? "Hybrid" : "Manual") + '</a>';
       } catch (e) {}
     }
 
@@ -1165,9 +1195,16 @@ function SyncNoteBeta() {
     var lastJumpMs = 0;       // one jump per click — a click bubbles
                               // through nested cards, so card+group filters
                               // can both see the same release event
-    var autoPending = null;   // {drawing, frame}: Auto-created note prompt
-                              // that hasn't received text yet (v0.34.0)
-    var lastAutoMs = 0;       // auto-add dedupe, same bubbling reason
+    var autoPending = null;   // HYBRID: {drawing, frame} click-created
+                              // prompt that hasn't received text yet
+    var lastAutoMs = 0;       // prompt-focus/add dedupe (clicks bubble)
+    var promptFrame = -1;     // AUTO: frame the VIRTUAL prompt card is
+                              // rendered at — no sub exists until commit
+    var promptTargetDrawing = null; // a sub already starts at promptFrame:
+                                    // its own add box is the prompt
+    var virtualDraft = null;  // prompt text preserved across rebuilds
+    var liveVirtualInput = null; // the prompt card's box, per build
+    var liveVirtualCard = null;  // ...and the card itself (scroll/flash)
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -1202,6 +1239,16 @@ function SyncNoteBeta() {
       } catch (e) { /* best-effort */ }
       liveNoteBoxes = {};
 
+      // Stash the virtual prompt's half-typed text too (Auto mode).
+      try {
+        if (liveVirtualInput) {
+          var vtxt = String(liveVirtualInput.plainText);
+          if (vtxt.replace(/^\s+|\s+$/g, "") !== "") virtualDraft = vtxt;
+        }
+      } catch (e) { /* best-effort */ }
+      liveVirtualInput = null;
+      liveVirtualCard = null;
+
       // Stash half-typed notes so an auto-refresh can't eat a draft.
       try {
         for (var dn in liveInputs) {
@@ -1220,13 +1267,37 @@ function SyncNoteBeta() {
 
       clickJumpArmed = 0; // recounted as the cards below arm their filters
       var groups = collectGroups(layer, model);
+      // AUTO: does the prompt frame need a VIRTUAL card, or does a sub
+      // already START there (then that group's add box IS the prompt)?
+      var needVirtual = false;
+      promptTargetDrawing = null;
+      if (snMode === "auto" && promptFrame > 0) {
+        needVirtual = true;
+        for (var pi = 0; pi < groups.length && needVirtual; pi++) {
+          var pspans = groups[pi].spans || [];
+          for (var ps = 0; ps < pspans.length; ps++) {
+            if (pspans[ps].first === promptFrame) {
+              needVirtual = false;
+              promptTargetDrawing = groups[pi].drawing;
+              break;
+            }
+          }
+        }
+      }
+      var virtualPlaced = !needVirtual;
       for (var i = 0; i < groups.length; i++) {
+        if (!virtualPlaced &&
+            (groups[i].frame < 0 || groups[i].frame > promptFrame)) {
+          addW(listLayout, makeVirtualCard(promptFrame)); // frame order
+          virtualPlaced = true;
+        }
         addW(listLayout, makeGroupWidget(groups[i]));
       }
+      if (!virtualPlaced) addW(listLayout, makeVirtualCard(promptFrame));
       if (clickJumpArmed > 0) {
         trace("click-jump: " + clickJumpArmed + " filter(s) armed");
       }
-      if (groups.length === 0) {
+      if (groups.length === 0 && !liveVirtualCard) {
         var hint = new QLabel("No notes yet.\nMove the playhead and click “Add Note”.");
         hint.wordWrap = true;
         try { hint.textInteractionFlags = Qt.NoTextInteraction; } // click-through
@@ -2064,6 +2135,174 @@ function SyncNoteBeta() {
       } catch (e) { /* the launch sweep is the backstop */ }
     }
 
+    // ---- Auto v2 (beta.10): the prompt FOLLOWS THE PLAYHEAD ------------
+    // No click-in/click-out: when the playhead settles (debounced), a
+    // VIRTUAL prompt card renders at that frame. No sub is created until
+    // the note commits — scrubbing writes NOTHING to the scene, and an
+    // abandoned prompt costs nothing (there is nothing to clean up).
+
+    function makeVirtualCard(vf) {
+      var card = new QFrame();
+      card.frameShape = QFrame.StyledPanel;
+      liveVirtualCard = card;
+      liveGroups["__prompt__"] = card; // scroll/flash machinery lookup key
+      var v = new QVBoxLayout(card);
+
+      var head = new QLabel(
+        '<span style="color: ' + SN_GREEN + '; font-weight: bold;">Frame ' +
+        vf + "</span>");
+      try { head.textInteractionFlags = Qt.NoTextInteraction; } // click-through
+      catch (e) { try { head.textInteractionFlags = 0; } catch (e2) {} }
+      addW(v, head);
+
+      var rowW = new QWidget();
+      var row = new QHBoxLayout(rowW);
+      row.setContentsMargins(0, 0, 0, 0);
+      var input = new QTextEdit();
+      try { input.acceptRichText = false; } catch (e) {}
+      try { input.placeholderText = "Add note…"; } catch (e) {}
+      liveVirtualInput = input;
+      if (virtualDraft) { // a rebuild interrupted typing: restore it
+        try { input.plainText = virtualDraft; } catch (e) {}
+        virtualDraft = null;
+      }
+      sizeNoteInput(input);
+      var noteBtn = new QPushButton("Add");
+      addW(row, input, 1);
+      addW(row, noteBtn);
+      addW(v, rowW);
+
+      function commitVirtual(explicitText) {
+        var txt = (explicitText !== undefined) ? explicitText : "";
+        if (explicitText === undefined) {
+          try { txt = String(input.plainText); } catch (e) {}
+        }
+        txt = txt.replace(/^\s+|\s+$/g, "");
+        if (txt === "") return;
+        // The sub is born HERE — at commit time, not prompt time.
+        var dn = ensureSubstitutionAtFrame(layer, vf);
+        if (!dn) return;
+        addNote(model, layer.elementId, dn, txt);
+        saveModel(model);
+        virtualDraft = null;
+        try { input.plainText = ""; } catch (e) {}
+        trace("auto: note committed at frame " + vf + " (sub " + dn + ")");
+        refresh(dn);
+        // Hand the keyboard back to Harmony so its shortcuts work again.
+        if (SN_AUTO_FOCUS === "steal") {
+          try { var mw = mainWindow(); if (mw) mw.activateWindow(); } catch (e) {}
+        }
+      }
+      noteBtn.clicked.connect(function () { commitVirtual(); });
+
+      var kf = makePromptKeyFilter(input, function () { commitVirtual(); });
+      if (kf) { try { input.installEventFilter(kf); } catch (e) {} }
+      var prevTxt = "";
+      try { prevTxt = String(input.plainText); } catch (e) {}
+      input.textChanged.connect(function () {
+        sizeNoteInput(input);
+        try {
+          var t = String(input.plainText);
+          if (isEnterKeypress(prevTxt, t)) {
+            trace("Enter via fallback (prompt box) — saving");
+            commitVirtual(prevTxt);
+            return;
+          }
+          prevTxt = t;
+        } catch (e) { /* typing must never break */ }
+      });
+
+      return card;
+    }
+
+    // Enter machinery + SCRUB PASSTHROUGH (user concern: < > scrubbing
+    // must survive the focus steal): while the prompt box is EMPTY, the
+    // frame-step keys — , . < > and the left/right arrows — act as real
+    // frame steps instead of typing. A box with text types normally.
+    function makePromptKeyFilter(input, commitFn) {
+      try {
+        var f = new QObject(dlg);
+        f.eventFilter = function (watched, event) {
+          try {
+            if (event.type() === QEvent.KeyPress) {
+              var k = event.key();
+              if (k === Qt.Key_Return || k === Qt.Key_Enter) {
+                if (event.modifiers() & Qt.ShiftModifier) return false;
+                commitFn();
+                return true;
+              }
+              var empty = false;
+              try {
+                empty = String(input.plainText).replace(/\s/g, "") === "";
+              } catch (e0) {}
+              if (empty) {
+                function K(name, dflt) {
+                  try { return Number(Qt[name]) || dflt; }
+                  catch (e) { return dflt; }
+                }
+                var dir = 0;
+                if (k === K("Key_Comma", 44) || k === K("Key_Less", 60) ||
+                    k === K("Key_Left", 16777234)) dir = -1;
+                else if (k === K("Key_Period", 46) ||
+                         k === K("Key_Greater", 62) ||
+                         k === K("Key_Right", 16777236)) dir = 1;
+                if (dir !== 0) {
+                  var nf = frame.current() + dir;
+                  if (nf >= 1 && nf <= frame.numberOf()) frame.setCurrent(nf);
+                  return true; // consumed: it scrubbed, it doesn't type
+                }
+              }
+            }
+          } catch (e) { /* never block typing */ }
+          return false;
+        };
+        g_snKeepAlive.push(f); // pin or GC kills the override
+        return f;
+      } catch (e) { return null; }
+    }
+
+    // The playhead settled somewhere new: move the prompt — unless the
+    // box holds half-typed text (typing is intent; never yank a draft
+    // out from under the user). Returns true when the prompt moved.
+    function syncPromptFrame() {
+      if (snMode !== "auto") return false;
+      var f = -1;
+      try { f = frame.current(); } catch (e) { return false; }
+      if (f <= 0 || f === promptFrame) return false;
+      try {
+        if (liveVirtualInput &&
+            String(liveVirtualInput.plainText)
+              .replace(/^\s+|\s+$/g, "") !== "") {
+          return false; // draft in progress: the prompt stays put
+        }
+      } catch (e) {}
+      promptFrame = f;
+      return true;
+    }
+
+    // Scroll to + flash the prompt and (policy "steal") move the keyboard
+    // into its box — skipped while a mouse button is down, so a timeline
+    // drag is never interrupted mid-hold.
+    function focusPrompt() {
+      if (snMode !== "auto") return;
+      var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
+      try { scrollGroupToTop(key); } catch (e) {}
+      try { highlightGroup(key); } catch (e) {}
+      if (SN_AUTO_FOCUS !== "steal") return;
+      try {
+        var mb = 0;
+        try { mb = Number(QApplication.mouseButtons()); } catch (e0) {}
+        if (mb) return; // mid-drag: show the prompt, don't steal
+      } catch (e) {}
+      try { dlg.activateWindow(); } catch (e) {}
+      if (promptTargetDrawing) {
+        focusAddInput(promptTargetDrawing);
+      } else if (liveVirtualInput) {
+        try { liveVirtualInput.setFocus(); }
+        catch (e0) { try { liveVirtualInput.setFocus(7); } catch (e1) {} }
+      }
+    }
+
     // Focus a group's add box so typing works immediately. Asserted twice:
     // right after the rebuild, and again once layout settles (the same
     // timing reality focusGroup's re-scrolls handle).
@@ -2117,12 +2356,12 @@ function SyncNoteBeta() {
             pressTimer.singleShot = true;
             pressTimer.timeout.connect(function () {
               try {
-                if (snMode !== "auto") return;
+                if (snMode === "manual") return;
                 if (lastAutoMs >= pressAt || lastJumpMs >= pressAt) return;
                 lastAutoMs = (new Date()).getTime();
-                trace("auto click: release never delivered — adding via " +
-                      "press fallback");
-                autoAddAtPlayhead();
+                trace("auto click: release never delivered — press fallback");
+                if (snMode === "hybrid") autoAddAtPlayhead();
+                else focusPrompt();
               } catch (e) {}
             });
             g_snKeepAlivePanel.push(pressTimer);
@@ -2135,7 +2374,7 @@ function SyncNoteBeta() {
       var autoF = new QObject(dlg);
       autoF.eventFilter = function (watched, event) {
         try {
-          if (snMode !== "auto") return false;
+          if (snMode === "manual") return false; // classic: clicks do nothing
           var t = -1;
           try { t = Number(event.type()); } catch (e0) { return false; }
           var rel = 3;
@@ -2172,8 +2411,13 @@ function SyncNoteBeta() {
             return false;
           }
           lastAutoMs = nowMs;
-          trace("auto click: release on " + who + " — adding");
-          autoAddAtPlayhead();
+          if (snMode === "hybrid") {
+            trace("auto click: release on " + who + " — adding (hybrid)");
+            autoAddAtPlayhead();
+          } else {
+            trace("auto click: release on " + who + " — focusing prompt");
+            focusPrompt();
+          }
         } catch (e) { /* clicking must never break the panel */ }
         return false; // never consume — we only listen
       };
@@ -2254,11 +2498,13 @@ function SyncNoteBeta() {
           try { dea = Number(QEvent.WindowDeactivate) || 25; } catch (e1) {}
           var act = 24;
           try { act = Number(QEvent.WindowActivate) || 24; } catch (e2) {}
-          if (t === dea && autoPending) {
-            trace("auto mode: window deactivated with an empty prompt");
+          if (t === dea && snMode === "hybrid" && autoPending) {
+            trace("hybrid: window deactivated with an empty prompt");
             cleanupPendingAuto();
+          } else if (t === act && snMode === "hybrid") {
+            maybeTitleBarAdd(); // title-bar clicks never reach Qt: geometry
           } else if (t === act && snMode === "auto") {
-            maybeTitleBarAdd();
+            focusPrompt(); // entering the window = ready to type
           }
         } catch (e) {}
         return false;
@@ -2326,14 +2572,20 @@ function SyncNoteBeta() {
                 scheduleStalenessCheck();
                 return;
               }
-              // Playhead moved away from an untouched Auto prompt: the
-              // user has moved on — abandon it (v0.34.0). A prompt at the
-              // CURRENT frame is the one being worked on; keep it.
-              cleanupPendingAuto(frame.current());
+              // HYBRID: playhead moved away from an untouched prompt —
+              // the user moved on; abandon it. A prompt at the CURRENT
+              // frame is the one being worked on; keep it.
+              if (snMode === "hybrid") cleanupPendingAuto(frame.current());
+              // AUTO: the prompt follows the settled playhead.
+              var promptMoved = syncPromptFrame();
               if (groupsSignature() !== shownSig) {
                 trace("timeline changed under the panel (via " + lastSignal +
                       ") — auto-refreshing");
                 refresh(); // refresh() updates the scrub buttons too
+                if (promptMoved) focusPrompt();
+              } else if (promptMoved) {
+                refresh(); // re-render: the virtual card moves frames
+                focusPrompt();
               } else {
                 updateScrubButtons(); // playhead may have moved past the ends
               }
