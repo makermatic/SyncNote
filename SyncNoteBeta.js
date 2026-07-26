@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.8";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.9";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1037,9 +1037,17 @@ function SyncNoteBeta() {
     modeLbl.toolTip = "Auto: click empty space in the list to start a note " +
                       "at the playhead.\nManual: only the Add Note button " +
                       "creates notes.";
-    modeLbl.linkActivated.connect(function () {
+    // Toggling fires from the hover filter's release (whole label = click
+    // target) with linkActivated kept as a fallback path — deduped, so
+    // engines where both fire still toggle exactly once.
+    var lastModeToggleMs = 0;
+    function toggleMode() {
+      var n = (new Date()).getTime();
+      if (n - lastModeToggleMs < 200) return;
+      lastModeToggleMs = n;
       setMode(snMode === "auto" ? "manual" : "auto");
-    });
+    }
+    modeLbl.linkActivated.connect(toggleMode);
     updateModeLabel();
     addW(bottom, modeLbl);
 
@@ -1062,41 +1070,59 @@ function SyncNoteBeta() {
       trace("mode switched to " + m);
     }
 
-    // hovered: render the link white — SyncSketch-style "I'm clickable"
-    // feedback. Clicking re-renders via setMode() with no argument, which
-    // snaps it back to green even while the mouse is still on it (the
-    // next Enter event would re-whiten, but a settled click reads green —
-    // user spec). Label text swaps are the SAFE kind (KB §7.3.5).
-    function updateModeLabel(hovered) {
+    // Mode-link color is a tiny STATE MACHINE (beta.9 user spec): white
+    // exactly while hovered-and-not-pressed; green at rest AND while the
+    // button is held. State-driven render, so mode flips can't lose the
+    // hover state. Label text swaps are the SAFE kind (KB §7.3.5).
+    var modeHovered = false;
+    var modePressed = false;
+    function updateModeLabel() {
       try {
+        var white = modeHovered && !modePressed;
         modeLbl.text =
           '<span style="color: gray; font-size: 10px;">Mode: </span>' +
-          '<a href="#" style="color: ' + (hovered ? "#ffffff" : SN_GREEN) +
+          '<a href="#" style="color: ' + (white ? "#ffffff" : SN_GREEN) +
           '; text-decoration:none; font-size: 10px;">' +
           (snMode === "auto" ? "Auto" : "Manual") + '</a>';
       } catch (e) {}
     }
 
-    // Hover watcher: Enter/Leave events (types 10/11 — ancient, reliable
-    // Qt) via the proven filter machinery, not the unproven linkHovered
-    // signal. Never consumes; pinned for the panel's lifetime.
+    // Hover/press watcher: Enter/Leave/Press/Release via the proven
+    // filter machinery (not the unproven linkHovered signal). The
+    // release also TOGGLES — the whole label is the click target, and
+    // re-rendering the link's HTML on press could make linkActivated
+    // unreliable, so we don't depend on it. Never consumes; pinned.
     try {
       var hovF = new QObject(dlg);
       hovF.eventFilter = function (watched, event) {
         try {
           var t = Number(event.type());
-          var ent = 10;
+          var ent = 10, lea = 11, prs = 2, rel = 3;
           try { ent = Number(QEvent.Enter) || 10; } catch (e0) {}
-          var lea = 11;
           try { lea = Number(QEvent.Leave) || 11; } catch (e1) {}
-          if (t === ent) updateModeLabel(true);
-          else if (t === lea) updateModeLabel(false);
+          try { prs = Number(QEvent.MouseButtonPress) || 2; } catch (e2) {}
+          try { rel = Number(QEvent.MouseButtonRelease) || 3; } catch (e3) {}
+          if (t === ent) { modeHovered = true; updateModeLabel(); }
+          else if (t === lea) {
+            modeHovered = false; modePressed = false; updateModeLabel();
+          } else if (t === prs) {
+            modePressed = true; updateModeLabel();
+          } else if (t === rel) {
+            modePressed = false; updateModeLabel();
+            var isLeft = true;
+            try {
+              var left = 1;
+              try { left = Number(Qt.LeftButton) || 1; } catch (e4) {}
+              isLeft = (Number(event.button()) === left);
+            } catch (e5) { /* unreadable: assume left */ }
+            if (isLeft && modeHovered) toggleMode();
+          }
         } catch (e) {}
         return false;
       };
       modeLbl.installEventFilter(hovF);
       g_snKeepAlivePanel.push(hovF);
-    } catch (e) { /* toggle works without the hover flourish */ }
+    } catch (e) { /* linkActivated fallback still toggles */ }
 
     // Bottom strip, decluttered (beta.7, user design): the Layer/element/
     // port debug readout lives behind the ⓘ button now; the strip keeps
@@ -1158,6 +1184,9 @@ function SyncNoteBeta() {
     // group instead of restoring the previous scroll position (used by the
     // Add Note button so the new sub is immediately visible).
     function refresh(focusDrawing) {
+      var refT0 = (new Date()).getTime(); // beta.9: measure the rebuild —
+      // adds feel slower as notes grow, and this number tells us how much
+      // of that is the full-list rebuild before we optimize anything.
       // Rebuilding the list resets the scroll position — remember it so
       // adding a note deep in the list doesn't yank the view around.
       var savedScroll = 0;
@@ -1215,6 +1244,14 @@ function SyncNoteBeta() {
         restoreScroll(savedScroll);
       }
       updateScrubButtons();
+      try {
+        var noteCount = 0;
+        for (var gi = 0; gi < groups.length; gi++) {
+          noteCount += notesFor(model, layer.elementId, groups[gi].drawing).length;
+        }
+        trace("refresh: " + groups.length + " group(s), " + noteCount +
+              " note(s) rebuilt in " + ((new Date()).getTime() - refT0) + " ms");
+      } catch (e) { /* diagnostics only */ }
 
       // Note boxes measure against the wrong wrap width until the layout
       // computes geometry (the tiny-scrollbox bug, understood since
