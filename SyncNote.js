@@ -42,7 +42,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.5";          // node deletion deletes notes (2026-07-26)
+  var SN_VERSION    = "0.34.6";          // recycled-element ghost fix (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -217,7 +217,19 @@ function SyncNote() {
       } catch (e) { /* worst case: stale notes linger in metadata */ }
       model.syncNoteElementId = -1;
     }
-    return createNotesLayer();
+    var fresh = createNotesLayer();
+    // Harmony RECYCLES element IDs (proven: the panel reported element
+    // #59, then a later fresh layer got #55) — so a new element can
+    // inherit the note-bucket of a long-deleted layer and its ghost
+    // notes. A brand-new layer has zero notes BY DEFINITION: stamp its
+    // bucket empty, whatever ID Harmony handed out.
+    if (fresh) {
+      try {
+        model.notesByDrawing[String(fresh.elementId)] = {};
+        saveModel(model);
+      } catch (e) { /* ghosts only possible on ID reuse; rare */ }
+    }
+    return fresh;
   }
 
   // node.add fails (returns "") if a sibling by that name exists; probe.
