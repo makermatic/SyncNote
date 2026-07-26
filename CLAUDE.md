@@ -35,6 +35,8 @@ your instincts disagree, the KB wins.
   line rather than stacking blind fixes. Failed experiments get retired with a
   written cause (see KB §33), not endless retries.
 - The UI is heavily user-tuned. Do not redesign layout unasked.
+- **Any UI change applies to ALL THREE modes (Manual / Hybrid / Auto)
+  unless Zack explicitly scopes it to one** (his rule, 2026-07-26).
 - `_icon/` and `Icon.ai` are Zack's working art files — never touch or commit
   them (the exported `_icon/_exports/Icon.png` is tracked; that one is fine).
 
