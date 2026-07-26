@@ -42,7 +42,7 @@ function SyncNote() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.6";          // BLESSED TEACHER RELEASE (2026-07-26)
+  var SN_VERSION    = "0.35.0";          // BLESSED TEACHER RELEASE (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -677,14 +677,14 @@ function SyncNote() {
     return String(max + 1);
   }
 
-  // Ensure a substitution STARTS at the given frame; return its drawing name.
-  // Reuse only when a sub already begins exactly at this frame. If the frame
-  // merely continues an earlier drawing's exposure, split it with a new sub —
-  // per the brief: "creates a drawing substitution wherever the playhead is."
+  // Ensure a substitution covers the given frame; return its drawing name.
+  // ANY frame inside an existing exposure reuses that sub (v0.35.0): the
+  // old rule reused only when a sub STARTED exactly here and otherwise
+  // split the exposure, so adding a note on frame 45 of a 44-45 sub
+  // created a redundant second sub and a second card for one drawing.
   function ensureSubstitutionAtFrame(layer, atFrame) {
     var here = column.getEntry(layer.column, 1, atFrame);
-    var prev = (atFrame > 1) ? column.getEntry(layer.column, 1, atFrame - 1) : "";
-    if (here && here !== "" && here !== prev) return here; // a sub starts here
+    if (here && here !== "") return here; // this frame already has a sub
 
     scene.beginUndoRedoAccum("SyncNote: add substitution");
     try {
@@ -1081,7 +1081,7 @@ function SyncNote() {
         if (m === "auto") {
           syncPromptFrame();
           refresh();
-          focusPrompt();
+          focusPrompt("aligntop"); // switching to Auto: show the new prompt
         } else if (prev === "auto") {
           promptFrame = -1;
           refresh();
@@ -1176,8 +1176,10 @@ function SyncNote() {
     var liveGroups = {};  // drawingName -> its group card in the current build
     var staleTimer = null;
     var lastSignal = "";  // which notifier signal requested the last check
-    var hlGroup = null;   // currently highlighted group card
-    var hlTimer = null;   // clears the highlight after a moment
+    var hlGroup = null;   // widget currently wearing the highlight border
+    var selectedDrawing = null; // the SELECTED card (all three modes): the
+                              // highlight persists until another card is
+                              // selected, and survives rebuilds
     var editingNoteId = null; // note unlocked for in-place editing, or null
     var editDraft = null;     // mid-edit text captured across rebuilds
     var liveNoteBoxes = {};   // noteId -> its QTextEdit in the current build
@@ -1207,14 +1209,19 @@ function SyncNote() {
                               // kills the scrub)
 
     // Signature of the live timeline state the list depends on.
-    function groupsSignature() {
-      var groups = collectGroups(layer, model);
+    // signatureOf() reuses an already-collected groups array — refresh()
+    // used to scan the whole column THREE times per rebuild (cards,
+    // signature, scrub buttons); it now scans once (v0.35.0 perf).
+    function signatureOf(groups) {
       var parts = [];
       for (var i = 0; i < groups.length; i++) {
         // ALL spans: length changes AND re-exposure drags must read stale
         parts.push(groups[i].drawing + ":" + spanText(groups[i].spans));
       }
       return parts.join("|");
+    }
+    function groupsSignature() {
+      return signatureOf(collectGroups(layer, model));
     }
 
     // Optional focusDrawing: after the rebuild, scroll to and highlight that
@@ -1265,11 +1272,17 @@ function SyncNote() {
 
       g_snKeepAlive = []; // old cards (and their filters) are torn down below
       clearLayout(listLayout);
+      trace("refresh: teardown done"); // Message Log only: the crash
+      // JOURNAL stays commit-path-only, so shipping it costs one small
+      // file write per saved note instead of one per rebuild.
 
       clickJumpArmed = 0; // recounted as the cards below arm their filters
       var groups = collectGroups(layer, model);
-      // AUTO: does the prompt frame need a VIRTUAL card, or does a sub
-      // already START there (then that group's add box IS the prompt)?
+      // AUTO: does the prompt frame need a VIRTUAL card, or is it already
+      // COVERED by a sub's exposure (then that group's add box IS the
+      // prompt)? Anywhere INSIDE a span counts (v0.35.0) — the old
+      // starts-exactly-here test put a second prompt card on frame 45 of
+      // a 44-45 sub, which would then split the exposure on commit.
       var needVirtual = false;
       promptTargetDrawing = null;
       if (snMode === "auto" && promptFrame > 0) {
@@ -1277,13 +1290,21 @@ function SyncNote() {
         for (var pi = 0; pi < groups.length && needVirtual; pi++) {
           var pspans = groups[pi].spans || [];
           for (var ps = 0; ps < pspans.length; ps++) {
-            if (pspans[ps].first === promptFrame) {
+            if (promptFrame >= pspans[ps].first && promptFrame <= pspans[ps].last) {
               needVirtual = false;
               promptTargetDrawing = groups[pi].drawing;
               break;
             }
           }
         }
+      }
+      // Draft rescue (v0.35.0): if a sub appeared at the prompt frame
+      // while text sat in the virtual box — e.g. DRAWING on that frame
+      // creates one — hand the text to that group's add box instead of
+      // dropping it (the "my note text vanished" bug).
+      if (promptTargetDrawing && virtualDraft) {
+        drafts[promptTargetDrawing] = virtualDraft;
+        virtualDraft = null;
       }
       var virtualPlaced = !needVirtual;
       promptAnchor = "";
@@ -1311,13 +1332,21 @@ function SyncNote() {
       // (Safer than addStretch(), which has its own binding quirks.)
       addW(listLayout, new QWidget(), 1);
 
-      shownSig = groupsSignature(); // what the panel now reflects
+      // Restore the selection border on the rebuilt card (v0.35.0): the
+      // selection is panel state, not card state, so it must survive
+      // every rebuild — otherwise adding a note silently deselects.
+      if (selectedDrawing && liveGroups[selectedDrawing]) {
+        highlightGroup(selectedDrawing);
+      }
+
+      shownSig = signatureOf(groups); // what the panel now reflects —
+      // derived from the groups already collected above (single scan)
       if (focusDrawing && liveGroups[focusDrawing]) {
         focusGroup(focusDrawing); // don't restore old scroll — go to the card
       } else {
         restoreScroll(savedScroll);
       }
-      updateScrubButtons();
+      updateScrubButtons(groups);
       try {
         var noteCount = 0;
         for (var gi = 0; gi < groups.length; gi++) {
@@ -1344,6 +1373,15 @@ function SyncNote() {
               }
             }
           } catch (e) {}
+          // Boxes holding RESTORED text need this pass too (v0.35.0):
+          // measured pre-layout they come out one line tall with a
+          // scrollbar — the "text came back in a tiny sliding box" bug.
+          try {
+            if (liveVirtualInput) sizeNoteInput(liveVirtualInput);
+            for (var dn in liveInputs) {
+              if (liveInputs.hasOwnProperty(dn)) sizeNoteInput(liveInputs[dn]);
+            }
+          } catch (e) {}
           // NOTE (v0.28.6, padding saga RETIRED): rich-text QLabels
           // under-report their wrapped height ~3-4px per line (proven:
           // lblH=80 for ~100px of painted text), so long notes eat into
@@ -1355,6 +1393,56 @@ function SyncNote() {
         });
         mt.start(60);
       } catch (e) { /* immediate sizing already happened per card */ }
+    }
+
+    // Deferred rebuild (v0.35.0): Enter-commits used to run refresh()
+    // from INSIDE the text box's own textChanged signal — tearing down
+    // the emitting widget mid-dispatch, the prime suspect for the parked
+    // Enter crash (KB §41). A 0 ms single-shot lets the signal finish
+    // first; typing also feels snappier because commit returns at once.
+    // Crash journal: a hard crash kills Harmony's in-memory Message Log
+    // and the breadcrumbs with it, so commit-path crumbs are mirrored to
+    // a file that survives the process. Whole journal rewritten per
+    // crumb (append mode is an unproven binding); commit-path only.
+    var crumbLines = [];
+    var crumbFile = "";
+    try { crumbFile = String(specialFolders.temp) + "/syncnote_crashjournal.txt"; }
+    catch (e) { /* journal unavailable; Message Log only */ }
+    function crumb(msg) {
+      trace(msg);
+      if (!crumbFile) return;
+      try {
+        crumbLines.push(String(new Date().toTimeString()).substr(0, 8) + "  " + msg);
+        if (crumbLines.length > 40) crumbLines.shift();
+        var f = new File(crumbFile);
+        f.open(2); // write (truncate + rewrite the whole journal)
+        f.write(crumbLines.join("\n") + "\n");
+        f.close();
+      } catch (e) { /* best-effort */ }
+    }
+
+    // Run fn on the NEXT event-loop turn, outside whatever signal is
+    // currently dispatching (beta.2: not just the refresh — the whole
+    // commit, scene writes included, moves out of the textChanged
+    // signal; deferring only the refresh did not stop the Enter crash).
+    function deferred(fn) {
+      try {
+        var t;
+        try { t = new QTimer(dlg); } catch (e0) { t = new QTimer(); }
+        g_snKeepAlive.push(t);
+        t.singleShot = true;
+        t.timeout.connect(function () { try { fn(); } catch (e) {} });
+        t.start(0);
+      } catch (e) {
+        try { fn(); } catch (e2) {} // no timer: direct, crash risk and all
+      }
+    }
+
+    function scheduleRefresh(focusDrawing, thenFn) {
+      deferred(function () {
+        refresh(focusDrawing);
+        if (thenFn) { try { thenFn(); } catch (e) {} }
+      });
     }
 
     // Align a group card's top with the viewport top, so its header and
@@ -1403,13 +1491,40 @@ function SyncNote() {
       }
     }
 
+    // Saving a note must NOT move the view (v0.35.0): commits used to
+    // pass the drawing to refresh(), which pins that card to the TOP of
+    // the list — a behavior meant for NEWLY CREATED subs. On a commit the
+    // card is normally already under your eyes, so the pin just yanked
+    // the panel elsewhere. Scroll only when the card is off-screen, and
+    // check again once the rebuilt layout has real geometry.
+    function keepGroupInView(dn) {
+      function check() {
+        try {
+          var w = liveGroups[dn];
+          if (!w) return;
+          if (!groupFullyVisible(w)) scrollGroupToTop(dn);
+        } catch (e) {}
+      }
+      check();
+      try {
+        var t;
+        try { t = new QTimer(dlg); } catch (e0) { t = new QTimer(); }
+        g_snKeepAlive.push(t);
+        t.singleShot = true;
+        t.timeout.connect(check);
+        t.start(80);
+      } catch (e) { /* the immediate check already did its best */ }
+    }
+
     // Gray out ◀/▶ when there's no note strictly before/after the playhead.
     // Uses the same data as the jump logic, so button state and jump
     // behavior can never disagree.
-    function updateScrubButtons() {
+    function updateScrubButtons(knownGroups) {
       try {
         var f = frame.current();
-        var groups = collectGroups(layer, model);
+        // Callers that already collected the groups pass them in — the
+        // scan is the expensive part (v0.35.0 perf).
+        var groups = knownGroups || collectGroups(layer, model);
         var hasPrev = false;
         var hasNext = false;
         for (var i = 0; i < groups.length; i++) {
@@ -1556,21 +1671,46 @@ function SyncNote() {
       // explicitText (optional): the text to save, bypassing input.plainText
       // — the textChanged path passes the text as it was BEFORE the Enter's
       // newline was inserted, so the stray line break never persists.
+      var lastCommitMs = 0;
       function commit(explicitText) {
+        // One save per gesture: the Add button fires this from BOTH
+        // pressed and clicked (see below), so a real release must not
+        // double-save. Also a re-entrancy guard against very fast adds.
+        var nowMs = (new Date()).getTime();
+        if (nowMs - lastCommitMs < 400) return;
         var txt = (explicitText !== undefined) ? explicitText : "";
         if (explicitText === undefined) {
           try { txt = String(input.plainText); } catch (e) {}
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
-        addNote(model, layer.elementId, drawingName, txt);
-        saveModel(model);
-        // Empty the box before refresh so the draft-stash doesn't re-save
-        // the just-committed text as an unsaved draft.
+        lastCommitMs = nowMs;
+        // Empty the box first so the draft-stash can't re-save the
+        // committed text; everything heavy runs on the next event-loop
+        // turn, outside this signal. Breadcrumb traces (beta.2): if a
+        // crash strikes, the log's LAST line names the killing step.
         try { input.plainText = ""; } catch (e) {}
         delete drafts[drawingName];
-        refresh();
+        deferred(function () {
+          crumb("commit[add]: start (sub " + drawingName + ")");
+          addNote(model, layer.elementId, drawingName, txt);
+          crumb("commit[add]: note added");
+          saveModel(model);
+          crumb("commit[add]: model saved");
+          selectedDrawing = drawingName; // the card you just wrote in is
+          // the selected one — same behavior Auto already had, applied to
+          // every mode (user rule: UI changes cover all three).
+          refresh(); // no focus arg: the scroll position is preserved
+          keepGroupInView(drawingName); // ...and the card stays in sight
+          crumb("commit[add]: refresh done");
+        });
       }
+      // Save on PRESS, not just click (v0.35.0): Harmony sometimes never
+      // delivers a button's mouse RELEASE (the §40 quirk that forced the
+      // background-click press fallback), and `clicked` requires
+      // press+release — so Add-button saves were silently lost while
+      // Enter still worked. Both signals are wired; commit() dedupes.
+      try { noteBtn.pressed.connect(function () { commit(); }); } catch (e) {}
       noteBtn.clicked.connect(function () { commit(); });
 
       // Enter handling, primary path: event filter (consumes the key).
@@ -1672,17 +1812,48 @@ function SyncNote() {
       dimNoteText(textLbl, note.done === true);
       addW(textCol, textLbl);
 
-      var box = new QTextEdit(); // native = identical to the add box
-      try { box.acceptRichText = false; } catch (e) {} // plain pastes only (v0.29.1)
-      box.plainText = (isEditingThis && editDraft !== null)
-        ? editDraft : String(note.text); // rebuilt mid-edit: restore draft
-      sizeNoteInput(box);
-      liveNoteBoxes[note.id] = box;
-      addW(textCol, box);
-
-      // Exactly one of the pair is ever visible.
-      if (isEditingThis) { try { textLbl.hide(); } catch (e) {} }
-      else { try { box.hide(); } catch (e) {} }
+      // Editor built ON DEMAND (v0.35.0 perf): a hidden QTextEdit per
+      // card roughly doubled the widget cost of every rebuild, and most
+      // cards are never edited. buildEditor() wires the full machinery;
+      // at build time it runs only for the card being edited mid-rebuild.
+      var box = null;
+      var prevEditText = "";
+      function buildEditor(initialText) {
+        box = new QTextEdit(); // native = identical to the add box
+        try { box.acceptRichText = false; } catch (e) {} // plain pastes only
+        box.plainText = initialText;
+        liveNoteBoxes[note.id] = box;
+        // Same Enter machinery as the add box: Enter = save, Shift+Enter
+        // = newline (position-independent detection, v0.28.2).
+        var ekf = makeEnterFilter(function () { finishEdit(true); });
+        if (ekf) { try { box.installEventFilter(ekf); } catch (e) {} }
+        try { prevEditText = String(box.plainText); } catch (e) {}
+        box.textChanged.connect(function () {
+          if (editingNoteId !== note.id) {      // programmatic reset / locked
+            try { prevEditText = String(box.plainText); } catch (e) {}
+            return;
+          }
+          sizeNoteInput(box); // auto-grow while typing
+          try {
+            var t = String(box.plainText);
+            if (isEnterKeypress(prevEditText, t)) {
+              trace("Enter via fallback (edit box) — saving");
+              finishEdit(true, prevEditText); // save the pre-newline text
+              return;
+            }
+            if (looksLikeEnter(prevEditText, t)) {
+              trace("newline kept (edit box) — shift detected");
+            }
+            prevEditText = t;
+          } catch (e) { /* typing must never break */ }
+        });
+      }
+      if (isEditingThis) { // rebuilt mid-edit: editor exists from the start
+        buildEditor(editDraft !== null ? editDraft : String(note.text));
+        sizeNoteInput(box);
+        addW(textCol, box);
+        try { textLbl.hide(); } catch (e) {}
+      }
 
       // Pack meta + text to the TOP: when the button column is taller than
       // the text, the text column otherwise centers in the leftover space
@@ -1715,41 +1886,6 @@ function SyncNote() {
         try { textLbl.show(); } catch (e) {}
         try { editBtn.toolTip = "Edit note"; } catch (e) {}
       };
-
-      // Same Enter machinery as the add box: Enter = save, Shift+Enter =
-      // newline. The filter also fires on a focused read-only box, but
-      // finishEdit no-ops unless this note is the one being edited.
-      var editKeyFilter = makeEnterFilter(function () { finishEdit(true); });
-      if (editKeyFilter) {
-        try { box.installEventFilter(editKeyFilter); } catch (e) {}
-      }
-      // Position-independent Enter detection (v0.28.2): compare with the
-      // previous text so a mid-line Enter saves too — the cursor is almost
-      // never at the END while editing, which is why the old trailing-"\n"
-      // check made Enter act like Shift+Enter here. prevEditText tracks
-      // content; programmatic sets (✎ prefill / finishEdit reset) change
-      // more than one char, so they never masquerade as a keypress.
-      var prevEditText = "";
-      try { prevEditText = String(box.plainText); } catch (e) {}
-      box.textChanged.connect(function () {
-        if (editingNoteId !== note.id) {        // programmatic reset / locked
-          try { prevEditText = String(box.plainText); } catch (e) {}
-          return;
-        }
-        sizeNoteInput(box); // auto-grow while typing
-        try {
-          var t = String(box.plainText);
-          if (isEnterKeypress(prevEditText, t)) {
-            trace("Enter via fallback (edit box) — saving");
-            finishEdit(true, prevEditText); // save the pre-newline text
-            return;
-          }
-          if (looksLikeEnter(prevEditText, t)) {
-            trace("newline kept (edit box) — shift detected"); // diagnostics
-          }
-          prevEditText = t;
-        } catch (e) { /* typing must never break */ }
-      });
 
       var delBtn = new QPushButton("✕");
       delBtn.toolTip = "Delete note";
@@ -1786,7 +1922,24 @@ function SyncNote() {
         }
         editingNoteId = note.id;
         editDraft = null;
-        try { box.plainText = String(note.text); } catch (e) {}
+        if (!box) {
+          // First ✎ on this card: build the editor now and slot it in
+          // ABOVE the trailing top-pack spacer (children: meta=0,
+          // label=1, spacer=2). Guarded — worst case the editor sits at
+          // the card's bottom until the next rebuild.
+          buildEditor(String(note.text));
+          try {
+            var spItem = textCol.takeAt(2);
+            addW(textCol, box);
+            try {
+              var spW = spItem ? spItem.widget() : null;
+              if (spW) { spW.hide(); spW.deleteLater(); }
+            } catch (e0) {}
+            addW(textCol, new QWidget(), 1); // fresh top-pack spacer
+          } catch (e1) { try { addW(textCol, box); } catch (e2) {} }
+        } else {
+          try { box.plainText = String(note.text); } catch (e) {}
+        }
         try { textLbl.hide(); } catch (e) {}
         try { box.show(); } catch (e) {}
         sizeNoteInput(box); // measured while shown: layout width is real
@@ -1854,38 +2007,41 @@ function SyncNote() {
           frame.setCurrent(f);
           scrollTimelineToFrame(f); // bring the sub into the Timeline view
         }
-        if (f !== shownFrame) refresh(); // display was stale (also updates ◀/▶)
-        else updateScrubButtons();
+        // Clicking a card SELECTS it (v0.35.0, all three modes): the
+        // highlight was previously only applied by ◀/▶ navigation, so
+        // clicking a card to jump left no visible trace of where you are.
+        selectedDrawing = dn;
+        if (f !== shownFrame) {
+          // Display was stale: one rebuild covers the jump AND the prompt.
+          if (snMode === "auto") syncPromptFrame();
+          refresh(); // the rebuild also re-applies the selection border
+          if (snMode === "auto") focusPrompt("noscroll"); // you clicked it
+          if (snMode === "hybrid") cleanupPendingAuto(frame.current());
+        } else {
+          highlightGroup(dn);
+          updateScrubButtons();
+          reconcilePromptNow(); // no delayed flicker; in place where it can
+        }
       };
     }
 
-    // Flash a white border on the card the arrow keys landed on, so it's
-    // obvious where navigation went; fades automatically. Deliberately
-    // styling-only (no event filters — see the v0.8.x card-click saga);
-    // the #id selector keeps the border off the note cards inside.
+    // White border marking the SELECTED card — where navigation landed or
+    // where you clicked. PERSISTENT (v0.35.0, user spec): it stays until
+    // another card is selected, in all three modes; it used to fade after
+    // 2.5 s, which made the selection feel like it had been lost. Purely
+    // styling (no event filters — see the v0.8.x card-click saga); the
+    // #id selector keeps the border off the note cards inside.
     function highlightGroup(drawingName) {
       clearHighlight();
+      selectedDrawing = drawingName; // remembered across rebuilds
       var w = liveGroups[drawingName];
       if (!w) return;
-      if (w === liveVirtualCard) return; // prompt card: PERSISTENT border,
-                                         // never the 2.5 s flash (it would
-                                         // overwrite and then clear it)
+      if (w === liveVirtualCard) return; // prompt card wears its own border
       try {
         w.objectName = "snGroupHL";
         w.styleSheet = "#snGroupHL { border: 1px solid #ffffff; border-radius: 3px; }";
         hlGroup = w;
-      } catch (e) { return; } // styling refused; nothing to clean up
-      try {
-        if (!hlTimer) {
-          try { hlTimer = new QTimer(dlg); }
-          catch (e0) { hlTimer = new QTimer(); }
-          hlTimer.singleShot = true;
-          hlTimer.timeout.connect(clearHighlight);
-          g_snKeepAlivePanel.push(hlTimer); // survives refreshes
-        }
-        hlTimer.stop();
-        hlTimer.start(2500);
-      } catch (e) { /* highlight just stays until the next one */ }
+      } catch (e) { /* styling refused; nothing to clean up */ }
     }
 
     function clearHighlight() {
@@ -2192,31 +2348,46 @@ function SyncNote() {
       addW(row, noteBtn);
       addW(v, rowW);
 
+      var lastVCommitMs = 0;
       function commitVirtual(explicitText) {
+        var nowMs = (new Date()).getTime(); // one save per gesture
+        if (nowMs - lastVCommitMs < 400) return;
         var txt = (explicitText !== undefined) ? explicitText : "";
         if (explicitText === undefined) {
           try { txt = String(input.plainText); } catch (e) {}
         }
         txt = txt.replace(/^\s+|\s+$/g, "");
         if (txt === "") return;
-        // The sub is born HERE — at commit time, not prompt time. Target
-        // promptFrame (live), not the captured vf: in-place moves slide
-        // the card to new frames without rebuilding it (beta.15).
-        var dn = ensureSubstitutionAtFrame(layer, promptFrame);
-        if (!dn) return;
-        addNote(model, layer.elementId, dn, txt);
-        saveModel(model);
+        lastVCommitMs = nowMs;
+        // The sub is born at COMMIT time, not prompt time — and (beta.2)
+        // on the NEXT event-loop turn: ensureSubstitutionAtFrame does
+        // real scene surgery (undo accum, Drawing.create, column write),
+        // far too heavy to run inside a textChanged dispatch. Target
+        // promptFrame captured now, in case the prompt moves meanwhile.
+        var targetFrame = promptFrame;
         virtualDraft = null;
         try { input.plainText = ""; } catch (e) {}
-        trace("auto: note committed at frame " + promptFrame +
-              " (sub " + dn + ")");
-        refresh(dn);
-        // Stay in the cockpit (beta.13): our window is active (the user
-        // just typed here), so focus flows into the next prompt's box —
-        // type → Enter → scrub keys → type, zero clicks. (The old
-        // hand-back-to-Harmony broke exactly this loop.)
-        focusPrompt();
+        deferred(function () {
+          crumb("commit[auto]: start (frame " + targetFrame + ")");
+          var dn = ensureSubstitutionAtFrame(layer, targetFrame);
+          crumb("commit[auto]: sub ensured (" + dn + ")");
+          if (!dn) return;
+          addNote(model, layer.elementId, dn, txt);
+          crumb("commit[auto]: note added");
+          saveModel(model);
+          crumb("commit[auto]: model saved");
+          refresh(); // was refresh(dn): pinning the card to the top
+                     // yanked the view away from what you just typed
+          keepGroupInView(dn);
+          crumb("commit[auto]: refresh done");
+          // Stay in the cockpit: focus flows into the next prompt's box.
+          focusPrompt();
+          crumb("commit[auto]: focus done");
+        });
       }
+      // Press AND click (see the group add box): a lost mouse release
+      // must not swallow the save. commitVirtual dedupes.
+      try { noteBtn.pressed.connect(function () { commitVirtual(); }); } catch (e) {}
       noteBtn.clicked.connect(function () { commitVirtual(); });
 
       var kf = makeEnterFilter(function () { commitVirtual(); });
@@ -2302,6 +2473,95 @@ function SyncNote() {
       } catch (e) { return false; }
     }
 
+    // Hand the prompt from the virtual card to an EXISTING group card
+    // WITHOUT rebuilding (v0.35.0): clicking a card lands the playhead on
+    // a frame that sub already covers, so the virtual prompt is redundant
+    // — hide that one widget instead of tearing down the whole list,
+    // which used to arrive ~300 ms after the click as a flicker. The card
+    // is only HIDDEN (hidden widgets collapse out of a box layout); the
+    // next real rebuild disposes of it, so nothing is deleted underfoot.
+    // Returns true when it handled the transition.
+    function retirePromptCardInPlace() {
+      try {
+        if (!liveVirtualCard || promptFrame <= 0) return false;
+        var groups = collectGroups(layer, model);
+        var target = null;
+        for (var i = 0; i < groups.length && !target; i++) {
+          var spans = groups[i].spans || [];
+          for (var s = 0; s < spans.length; s++) {
+            if (promptFrame >= spans[s].first && promptFrame <= spans[s].last) {
+              target = groups[i].drawing;
+              break;
+            }
+          }
+        }
+        if (!target || !liveGroups[target]) return false;
+        // Viewport anchor (v0.35.0): hiding a card ABOVE the target
+        // shifts the list up by its height, so the clicked card jumps
+        // under the cursor — the residual click flicker. Measure the
+        // target's position before and after, then compensate the
+        // scrollbar by exactly that delta (no spacing math needed).
+        var tw = liveGroups[target];
+        var sb = null, sv = 0, ty = -1;
+        try {
+          try { listLayout.activate(); } catch (e9) {}
+          ty = (typeof tw.pos.y === "function") ? tw.pos.y() : tw.pos.y;
+          sb = scroll.verticalScrollBar();
+          sv = Number(sb.value);
+        } catch (eA) { sb = null; }
+        // Carry half-typed text over to that card's add box.
+        var carry = "";
+        try { carry = String(liveVirtualInput.plainText); } catch (e0) {}
+        if (carry.replace(/^\s+|\s+$/g, "") !== "") {
+          if (liveInputs[target]) {
+            try {
+              liveInputs[target].plainText = carry;
+              sizeNoteInput(liveInputs[target]);
+            } catch (e1) {}
+          } else {
+            drafts[target] = carry;
+          }
+        }
+        try { liveVirtualCard.hide(); } catch (e2) {}
+        try {
+          if (sb && ty >= 0) {
+            try { listLayout.activate(); } catch (eB) {}
+            var ty2 = (typeof tw.pos.y === "function") ? tw.pos.y() : tw.pos.y;
+            var delta = ty - ty2; // how far the target card moved up
+            if (delta > 0) {
+              var nv = sv - delta;
+              if (nv < 0) nv = 0;
+              sb.value = nv; // clicked card stays put on screen
+            }
+          }
+        } catch (eC) { /* anchoring is cosmetic */ }
+        liveVirtualCard = null;
+        liveVirtualInput = null;
+        liveVirtualHead = null;
+        try { delete liveGroups["__prompt__"]; } catch (e3) {}
+        promptTargetDrawing = target;
+        virtualDraft = null;
+        trace("prompt handed to sub " + target + " in place (no rebuild)");
+        return true;
+      } catch (e) { return false; }
+    }
+
+    // Reconcile the prompt IMMEDIATELY (v0.35.0) instead of waiting for
+    // the debounced scene-change check — that delay is what made the
+    // repaint feel like a random flicker seconds after a click. Same
+    // work, done as the click's own response; the debounced check then
+    // finds nothing to do.
+    function reconcilePromptNow() {
+      if (snMode === "hybrid") { cleanupPendingAuto(frame.current()); return; }
+      if (snMode !== "auto") return;
+      if (!syncPromptFrame()) return;            // prompt didn't move
+      // noscroll throughout: this path is only reached from a click.
+      if (retirePromptCardInPlace()) { focusPrompt("noscroll"); return; }
+      if (tryMovePromptInPlace()) { focusPrompt("noscroll"); return; }
+      refresh();                                  // structure really changed
+      focusPrompt("noscroll");
+    }
+
     // The playhead settled somewhere new: move the prompt — unless the
     // box holds half-typed text (typing is intent; never yank a draft
     // out from under the user). Returns true when the prompt moved.
@@ -2351,12 +2611,21 @@ function SyncNote() {
       } catch (e) { return false; }
     }
 
-    function focusPrompt() {
+    // Scroll policy, explicit (v0.35.0) — `how`:
+    //   "aligntop"  a prompt card just APPEARED: pin it under the toolbar,
+    //               exactly where Manual/Hybrid put a newly created sub.
+    //   "noscroll"  came from a CLICK: the card is already under the
+    //               user's eyes, so any scroll only moves what shouldn't.
+    //   undefined   scroll only if the card isn't fully visible.
+    // In-place prompt moves never scroll — that's what ended the jitter.
+    function focusPrompt(how) {
       if (snMode !== "auto") return;
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
       var w = liveGroups[key];
-      if (w && groupFullyVisible(w)) {
-        try { highlightGroup(key); } catch (e) {} // on screen: flash, no yank
+      if (how === "aligntop") {
+        try { focusGroup(key); } catch (e) {} // pinned under the toolbar
+      } else if (how === "noscroll" || (w && groupFullyVisible(w))) {
+        try { highlightGroup(key); } catch (e) {} // border only, no scroll
       } else {
         try { focusGroup(key); } catch (e) {}
       }
@@ -2576,14 +2845,22 @@ function SyncNote() {
     // documented landmine: DO NOT install app-level event filters.
     // History in KB §40; the removed code is at commit 7be1378.
 
-    addBtn.clicked.connect(function () {
+    // Toolbar Add Note: press + click for the same lost-release reason,
+    // deduped so one gesture makes one sub.
+    var lastAddBtnMs = 0;
+    function addNoteAtPlayhead() {
+      var nowMs = (new Date()).getTime();
+      if (nowMs - lastAddBtnMs < 400) return;
+      lastAddBtnMs = nowMs;
       var f = frame.current();
       var drawingName = ensureSubstitutionAtFrame(layer, f);
       if (drawingName) {
         refresh(drawingName); // scroll to + flash the new group
-        focusAddInput(drawingName); // cursor ready in both modes (v0.34.0)
+        focusAddInput(drawingName); // cursor ready in every mode
       }
-    });
+    }
+    try { addBtn.pressed.connect(addNoteAtPlayhead); } catch (e) {}
+    addBtn.clicked.connect(addNoteAtPlayhead);
 
     // Scrub the playhead between note frames, anchored to wherever the
     // playhead currently is (frames recomputed live so new subs count).
@@ -2654,13 +2931,16 @@ function SyncNote() {
                 trace("timeline changed under the panel (via " + lastSignal +
                       ") — auto-refreshing");
                 refresh(); // refresh() updates the scrub buttons too
-                if (promptMoved) focusPrompt();
+                if (promptMoved) focusPrompt("aligntop"); // fresh card
               } else if (promptMoved) {
-                if (tryMovePromptInPlace()) {
-                  focusPrompt(); // flash; scrolls only if off-screen
+                // In-place first, both ways: retire a redundant virtual
+                // card, or slide it to the new frame. Only a genuine
+                // structure change earns a rebuild.
+                if (retirePromptCardInPlace() || tryMovePromptInPlace()) {
+                  focusPrompt(); // no scroll: same card, new number
                 } else {
-                  refresh(); // structure changed: full re-render
-                  focusPrompt();
+                  refresh(); // structure changed: a prompt card APPEARED —
+                  focusPrompt("aligntop"); // line it up under the toolbar
                 }
               } else {
                 updateScrubButtons(); // playhead may have moved past the ends
