@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.15";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.16";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1873,6 +1873,9 @@ function SyncNoteBeta() {
       clearHighlight();
       var w = liveGroups[drawingName];
       if (!w) return;
+      if (w === liveVirtualCard) return; // prompt card: PERSISTENT border,
+                                         // never the 2.5 s flash (it would
+                                         // overwrite and then clear it)
       try {
         w.objectName = "snGroupHL";
         w.styleSheet = "#snGroupHL { border: 1px solid #ffffff; border-radius: 3px; }";
@@ -2159,6 +2162,15 @@ function SyncNoteBeta() {
       card.frameShape = QFrame.StyledPanel;
       liveVirtualCard = card;
       liveGroups["__prompt__"] = card; // scroll/flash machinery lookup key
+      // PERSISTENT white border (beta.16): the prompt's border is not a
+      // flash, it marks where the prompt lives — scrolling away and back
+      // must not lose it (user report). Distinct objectName keeps the
+      // transient snGroupHL flash machinery from clearing it.
+      try {
+        card.objectName = "snPromptHL";
+        card.styleSheet =
+          "#snPromptHL { border: 1px solid #ffffff; border-radius: 3px; }";
+      } catch (e) { /* border cosmetic only */ }
       var v = new QVBoxLayout(card);
 
       var head = new QLabel(
@@ -2396,7 +2408,10 @@ function SyncNoteBeta() {
       } catch (e) { return false; }
     }
 
-    function focusPrompt() {
+    // force (beta.16): the summon key is an explicit user request — grab
+    // focus even though our window isn't active yet. setFocus pre-arms
+    // the widget, so the keyboard lands in it when activation completes.
+    function focusPrompt(force) {
       if (snMode !== "auto") return;
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
       var w = liveGroups[key];
@@ -2405,13 +2420,13 @@ function SyncNoteBeta() {
       } else {
         try { focusGroup(key); } catch (e) {}
       }
-      if (SN_AUTO_FOCUS !== "steal") return;
+      if (SN_AUTO_FOCUS !== "steal" && !force) return;
       var active = false;
       try {
         active = (typeof dlg.isActiveWindow === "function")
           ? dlg.isActiveWindow() : (dlg.isActiveWindow === true);
       } catch (e) { active = false; }
-      if (!active) return; // never fight the OS for activation
+      if (!active && !force) return; // never fight the OS for activation
       try {
         var mb = 0;
         try { mb = Number(QApplication.mouseButtons()); } catch (e0) {}
@@ -2634,6 +2649,78 @@ function SyncNoteBeta() {
       dlg.installEventFilter(winF);
       g_snKeepAlivePanel.push(winF);
     } catch (e) { /* lazy cleanup paths remain */ }
+
+    // ---- summon key (beta.16, user design) -----------------------------
+    // While working ANYWHERE in Harmony — timeline scrubbing included —
+    // bare Enter summons the note prompt at the playhead: Manual acts
+    // like the Add Note button, Hybrid like a background click, Auto
+    // enters the cockpit. Heard via an APPLICATION-level event filter
+    // (first use of this binding), scoped hard: bare Enter only, no
+    // modal dialog open, and NEVER while any text-entry widget has focus
+    // (renaming, Xsheet cells, our own boxes — their Enter is theirs).
+    // Consumed on trigger so Harmony doesn't double-act. The filter
+    // object is parented to the dialog, so it dies — and detaches —
+    // with the panel.
+    var lastSummonMs = 0;
+    try {
+      var app = null;
+      try { app = QApplication.instance(); } catch (eA) {}
+      if (!app) { try { app = QCoreApplication.instance(); } catch (eB) {} }
+      var sumF = new QObject(dlg);
+      sumF.eventFilter = function (watched, event) {
+        try {
+          var t = -1;
+          try { t = Number(event.type()); } catch (e0) { return false; }
+          var kp = 6;
+          try { kp = Number(QEvent.KeyPress) || 6; } catch (e0b) {}
+          if (t !== kp) return false;
+          var k = 0;
+          try { k = Number(event.key()); } catch (e1) { return false; }
+          if (k !== Number(Qt.Key_Return) && k !== Number(Qt.Key_Enter)) {
+            return false;
+          }
+          try { if (Number(event.modifiers())) return false; } catch (e2) {}
+          try { if (QApplication.activeModalWidget()) return false; } catch (e3) {}
+          try {
+            var fw = QApplication.focusWidget();
+            if (fw) {
+              var cn = String(fw.metaObject().className()).toLowerCase();
+              if (cn.indexOf("edit") >= 0 || cn.indexOf("spin") >= 0 ||
+                  cn.indexOf("combo") >= 0) {
+                return false; // someone is typing: their Enter, not ours
+              }
+            }
+          } catch (e4) { return false; } // can't verify: stay out of the way
+          var n = (new Date()).getTime();
+          if (n - lastSummonMs < 400) return true; // key-autorepeat guard
+          lastSummonMs = n;
+          trace("summon: Enter — prompting at frame " + frame.current() +
+                " (" + snMode + " mode)");
+          try { dlg.activateWindow(); } catch (e5) {}
+          try { dlg.raise(); } catch (e6) {}
+          if (snMode === "auto") {
+            focusPrompt(true); // forced: an explicit user request
+          } else if (snMode === "hybrid") {
+            autoAddAtPlayhead();
+          } else { // manual: exactly the Add Note button, plus focus
+            var sf = frame.current();
+            var sdn = ensureSubstitutionAtFrame(layer, sf);
+            if (sdn) { refresh(sdn); focusAddInput(sdn); }
+          }
+          return true; // consumed
+        } catch (e) { /* the summon must never break typing */ }
+        return false;
+      };
+      if (app) {
+        app.installEventFilter(sumF);
+        g_snKeepAlivePanel.push(sumF);
+        trace("summon key armed (app-level filter)");
+      } else {
+        trace("summon key unavailable: no application instance");
+      }
+    } catch (e) {
+      trace("summon key unavailable (" + e + ")");
+    }
 
     addBtn.clicked.connect(function () {
       var f = frame.current();
