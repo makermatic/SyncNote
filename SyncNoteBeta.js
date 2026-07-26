@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.10";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.11";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1205,6 +1205,12 @@ function SyncNoteBeta() {
     var virtualDraft = null;  // prompt text preserved across rebuilds
     var liveVirtualInput = null; // the prompt card's box, per build
     var liveVirtualCard = null;  // ...and the card itself (scroll/flash)
+    var lastKeyScrubMs = 0;   // last frame step via the prompt box's scrub
+                              // keys — rebuilds are DEFERRED while this is
+                              // fresh (key autorepeat's ~500 ms warm-up
+                              // outlives the 300 ms debounce; a rebuild
+                              // mid-hold destroys the focused box and
+                              // kills the scrub)
 
     // Signature of the live timeline state the list depends on.
     function groupsSignature() {
@@ -2247,6 +2253,7 @@ function SyncNoteBeta() {
                          k === K("Key_Greater", 62) ||
                          k === K("Key_Right", 16777236)) dir = 1;
                 if (dir !== 0) {
+                  lastKeyScrubMs = (new Date()).getTime(); // hold the rebuild
                   var nf = frame.current() + dir;
                   if (nf >= 1 && nf <= frame.numberOf()) frame.setCurrent(nf);
                   return true; // consumed: it scrubbed, it doesn't type
@@ -2282,12 +2289,14 @@ function SyncNoteBeta() {
 
     // Scroll to + flash the prompt and (policy "steal") move the keyboard
     // into its box — skipped while a mouse button is down, so a timeline
-    // drag is never interrupted mid-hold.
+    // drag is never interrupted mid-hold. Uses focusGroup, whose RETRIED
+    // scrolls (now/60ms/250ms) survive the post-rebuild window where card
+    // positions are still garbage — a one-shot scroll stops short on long
+    // jumps (the 82→4 bug).
     function focusPrompt() {
       if (snMode !== "auto") return;
       var key = promptTargetDrawing ? promptTargetDrawing : "__prompt__";
-      try { scrollGroupToTop(key); } catch (e) {}
-      try { highlightGroup(key); } catch (e) {}
+      try { focusGroup(key); } catch (e) {}
       if (SN_AUTO_FOCUS !== "steal") return;
       try {
         var mb = 0;
@@ -2569,6 +2578,15 @@ function SyncNoteBeta() {
                 // Never rebuild under someone's cursor mid-edit; check
                 // again shortly — it catches up after save/cancel.
                 trace("auto-refresh deferred (a note is being edited)");
+                scheduleStalenessCheck();
+                return;
+              }
+              // AUTO: while the scrub keys are actively firing, hold ALL
+              // rebuild work — a rebuild mid-hold destroys the focused
+              // prompt box and the held key dies with it. The prompt
+              // appears once scrubbing pauses (user spec).
+              if (snMode === "auto" &&
+                  ((new Date()).getTime() - lastKeyScrubMs) < 700) {
                 scheduleStalenessCheck();
                 return;
               }
