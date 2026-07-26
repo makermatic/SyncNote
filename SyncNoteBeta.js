@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.16";  // AUTO MODE v2 BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.17";  // AUTO MODE v2 BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2650,77 +2650,12 @@ function SyncNoteBeta() {
       g_snKeepAlivePanel.push(winF);
     } catch (e) { /* lazy cleanup paths remain */ }
 
-    // ---- summon key (beta.16, user design) -----------------------------
-    // While working ANYWHERE in Harmony — timeline scrubbing included —
-    // bare Enter summons the note prompt at the playhead: Manual acts
-    // like the Add Note button, Hybrid like a background click, Auto
-    // enters the cockpit. Heard via an APPLICATION-level event filter
-    // (first use of this binding), scoped hard: bare Enter only, no
-    // modal dialog open, and NEVER while any text-entry widget has focus
-    // (renaming, Xsheet cells, our own boxes — their Enter is theirs).
-    // Consumed on trigger so Harmony doesn't double-act. The filter
-    // object is parented to the dialog, so it dies — and detaches —
-    // with the panel.
-    var lastSummonMs = 0;
-    try {
-      var app = null;
-      try { app = QApplication.instance(); } catch (eA) {}
-      if (!app) { try { app = QCoreApplication.instance(); } catch (eB) {} }
-      var sumF = new QObject(dlg);
-      sumF.eventFilter = function (watched, event) {
-        try {
-          var t = -1;
-          try { t = Number(event.type()); } catch (e0) { return false; }
-          var kp = 6;
-          try { kp = Number(QEvent.KeyPress) || 6; } catch (e0b) {}
-          if (t !== kp) return false;
-          var k = 0;
-          try { k = Number(event.key()); } catch (e1) { return false; }
-          if (k !== Number(Qt.Key_Return) && k !== Number(Qt.Key_Enter)) {
-            return false;
-          }
-          try { if (Number(event.modifiers())) return false; } catch (e2) {}
-          try { if (QApplication.activeModalWidget()) return false; } catch (e3) {}
-          try {
-            var fw = QApplication.focusWidget();
-            if (fw) {
-              var cn = String(fw.metaObject().className()).toLowerCase();
-              if (cn.indexOf("edit") >= 0 || cn.indexOf("spin") >= 0 ||
-                  cn.indexOf("combo") >= 0) {
-                return false; // someone is typing: their Enter, not ours
-              }
-            }
-          } catch (e4) { return false; } // can't verify: stay out of the way
-          var n = (new Date()).getTime();
-          if (n - lastSummonMs < 400) return true; // key-autorepeat guard
-          lastSummonMs = n;
-          trace("summon: Enter — prompting at frame " + frame.current() +
-                " (" + snMode + " mode)");
-          try { dlg.activateWindow(); } catch (e5) {}
-          try { dlg.raise(); } catch (e6) {}
-          if (snMode === "auto") {
-            focusPrompt(true); // forced: an explicit user request
-          } else if (snMode === "hybrid") {
-            autoAddAtPlayhead();
-          } else { // manual: exactly the Add Note button, plus focus
-            var sf = frame.current();
-            var sdn = ensureSubstitutionAtFrame(layer, sf);
-            if (sdn) { refresh(sdn); focusAddInput(sdn); }
-          }
-          return true; // consumed
-        } catch (e) { /* the summon must never break typing */ }
-        return false;
-      };
-      if (app) {
-        app.installEventFilter(sumF);
-        g_snKeepAlivePanel.push(sumF);
-        trace("summon key armed (app-level filter)");
-      } else {
-        trace("summon key unavailable: no application instance");
-      }
-    } catch (e) {
-      trace("summon key unavailable (" + e + ")");
-    }
+    // NOTE: the Enter "summon key" (beta.16) is RETIRED WITH CAUSE — the
+    // app-level event filter it required made Harmony sluggish,
+    // delivered unreliably, and CRASHED Harmony with nothing in the log.
+    // A script-side QObject filtering every application event is now a
+    // documented landmine: DO NOT install app-level event filters.
+    // History in KB §40; the removed code is at commit 7be1378.
 
     addBtn.clicked.connect(function () {
       var f = frame.current();
