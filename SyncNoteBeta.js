@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.3";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.4";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -2034,16 +2034,33 @@ function SyncNoteBeta() {
           try { t = Number(event.type()); } catch (e0) { return false; }
           var rel = 3;
           try { rel = Number(QEvent.MouseButtonRelease) || 3; } catch (e1) {}
+          var prs = 2;
+          try { prs = Number(QEvent.MouseButtonPress) || 2; } catch (e1b) {}
+          // beta.4 diagnostics: log the pipeline so a dead click shows
+          // WHERE it died (no press = event never delivered; press but no
+          // release = release eaten; guard lines = skipped on purpose).
+          var who = (watched === host) ? "host" : "dlg";
+          if (t === prs) { trace("auto click: press on " + who); return false; }
           if (t !== rel) return false;
           try {
             var left = 1;
             try { left = Number(Qt.LeftButton) || 1; } catch (e2) {}
-            if (Number(event.button()) !== left) return false;
+            if (Number(event.button()) !== left) {
+              trace("auto click: non-left release on " + who + " — ignored");
+              return false;
+            }
           } catch (e3) { /* button unreadable: assume left */ }
           var nowMs = (new Date()).getTime();
-          if (nowMs - lastJumpMs < 300) return false; // click meant "jump"
-          if (nowMs - lastAutoMs < 300) return false; // same click, bubbled
+          if (nowMs - lastJumpMs < 300) {
+            trace("auto click: release on " + who + " — skipped (jump claimed it)");
+            return false;
+          }
+          if (nowMs - lastAutoMs < 300) {
+            trace("auto click: release on " + who + " — skipped (already added)");
+            return false;
+          }
           lastAutoMs = nowMs;
+          trace("auto click: release on " + who + " — adding");
           autoAddAtPlayhead();
         } catch (e) { /* clicking must never break the panel */ }
         return false; // never consume — we only listen
@@ -2081,6 +2098,8 @@ function SyncNoteBeta() {
         var fT = rv(fg, "y");
         var fR = fX + rv(fg, "width");
         var cT = rv(g, "y");        // client top = below the title bar
+        trace("activate: cursor=(" + px + "," + py + ") frameTop=" + fT +
+              " clientTop=" + cT + " x-range=" + fX + ".." + fR);
         if (px >= fX && px <= fR && py >= fT && py < cT) {
           var nowMs = (new Date()).getTime();
           if (nowMs - lastAutoMs < 300) return;
