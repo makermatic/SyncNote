@@ -803,6 +803,16 @@ Context: Zack distributes teacher builds (CGS staff — fully online school, Win
 
 **SECOND BLESSING — v0.31.4 (2026-07-10):** carries the minimal dimmed "Add note…" placeholder and open-at-minimum-width. First blessing to reach teachers via the UPDATER rather than a zip: everyone on 0.31.0/0.31.1 gets the auto-update dialog on next launch. Ritual ran clean: beta-file guard → stamp main → `-X theirs` merge → single-version-line check → SHA-pinned channel verification (HTTP 200, one version line, fix present).
 
+## 41. The 0.34.x aftershocks — v0.34.6, SHIPPED + BLESSED (2026-07-26)
+
+Same-day post-release fixes and decisions after the 0.34.0 blessing:
+- **v0.34.1 — scrub-char fix:** the filter-based scrub passthrough was inert (key events never reach filters), so with a box focused , . < > typed literally and autorepeat spammed them. Scrub characters are now recognized in the **textChanged fallback** (the key path this engine honors): in Auto, an add box whose content becomes only scrub characters performs the steps and clears itself. Trade: an Auto note cannot BEGIN with a bare , . < >.
+- **v0.34.2–.4 RETIRED, rolled back to 0.34.1 by user call** ("over-hallucinated"): Tab-typing-mode, a green prompt pulse, and prompt-follows-despite-draft. History at commits 08f32ef/35603c6/6fb9a98 if ever wanted. Lesson relearned the hard way: one change per round, evidence first — three speculative ships in a row burned trust.
+- **v0.34.5 — DESIGN CHANGE (user decision): deleting the Notes node DELETES its notes.** The original rebuild-and-recover path (resurrecting notes from metadata) removed. CAVEAT told in full: metadata writes are NOT on Harmony's undo stack — undo after the panel has relaunched restores the layer/art but never the note text; save-on-close makes the purge stick quickly.
+- **v0.34.6 — recycled-element ghost fix:** Harmony REUSES freed element IDs (log-proven: element #59, then a later fresh layer got #55). Scene metadata still held note-buckets of every deleted layer, so a fresh element could inherit a dead layer's bucket and resurrect its notes. Fresh layers now stamp their bucket empty regardless of ID. (This latent bug predates everything — the old recovery path had masked it.)
+
+**SIXTH BLESSING — v0.34.6 (2026-07-26):** Zack blessed after live-verifying the ghost fix. Ritual clean: guard → stamp → `-X theirs` merge → single-version-line check → SHA-pinned verification (HTTP 200, 140763 bytes, one version line, scrub + ghost fixes present, recovery path absent).
+
 ## 40. Three modes (Manual / Hybrid / Auto) — v0.34.0, SHIPPED + BLESSED (2026-07-26)
 
 Create-phase de-clunking: a Manual/Auto toggle (clickable status-strip label, hover-white state machine); in Auto, any click on a non-interactive part of the window creates a note prompt at the playhead with the input focused, and an untouched prompt self-deletes (launch-sweep AND-rule). Confirmed working through beta.9. **ROLLBACK POINT: beta.9 = commit 0a74a7a** — click-triggered Auto Mode, fully functional.

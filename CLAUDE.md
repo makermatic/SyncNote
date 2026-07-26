@@ -99,15 +99,18 @@ your instincts disagree, the KB wins.
 
 ## State / roadmap
 
-Current: **v0.34.0**, blessed to `release` 2026-07-26 (fifth blessing) — main
-and release aligned; this blessing also put the installer + README on the
-release branch for the first time. Newest: THREE note-adding modes (KB §40 —
-Manual / Hybrid click-to-add / Auto playhead-following virtual prompt; the
-§40 engine facts are required reading: key events never reach script
-filters, app-level event filters CRASH Harmony, focus-stealing loses to the
-OS). Perf: full-rebuild-per-add is linear (~7 ms/group, baseline in §40);
-refresh timing trace stays in until optimized. All features confirmed
-except where the KB says retired.
+Current: **v0.34.6**, blessed to `release` 2026-07-26 (sixth blessing) — main
+and release aligned. THREE note-adding modes (KB §40 — Manual / Hybrid
+click-to-add / Auto playhead-following virtual prompt) plus the §41
+aftershocks: scrub chars fixed via the textChanged path, DELETING THE NOTES
+NODE NOW DELETES ITS NOTES (user decision; no undo once the panel runs),
+and fresh layers stamp their note-bucket empty (Harmony recycles element
+IDs — ghost-note fix). The §40/§41 engine facts are required reading: key
+events never reach script filters, app-level event filters CRASH Harmony,
+focus-stealing loses to the OS, element IDs get recycled. Perf:
+full-rebuild-per-add is linear (~7 ms/group, baseline in §40); refresh
+timing trace stays in until optimized. All features confirmed except where
+the KB says retired.
 First-install installer + student README shipped 2026-07-17 (installer v1.0.0,
 awaiting Zack's real-machine tests; see installer_kb.md §8).
 Open items: teacher
