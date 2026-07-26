@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.4";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.5";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1075,6 +1075,11 @@ function SyncNoteBeta() {
     var statusLbl = new QLabel(statusPrefix + nb("v" + SN_VERSION));
     statusLbl.styleSheet = "color: gray; font-size: 10px;";
     statusLbl.wordWrap = true;
+    // Click-transparent (beta.5): a QLabel can swallow clicks it does
+    // nothing with (the §38 family) — this one made most of the bottom
+    // strip add-deaf in Auto Mode. Nothing lost: it was never selectable.
+    try { statusLbl.textInteractionFlags = Qt.NoTextInteraction; }
+    catch (e) { try { statusLbl.textInteractionFlags = 0; } catch (e2) {} }
     // Compressible: without an explicit minimum, this label's size hint
     // forced the whole WINDOW wider (v0.19.1 regression). Now it wraps to
     // a second line on the left instead of stretching the row.
@@ -1169,6 +1174,8 @@ function SyncNoteBeta() {
       if (groups.length === 0) {
         var hint = new QLabel("No notes yet.\nMove the playhead and click “Add Note”.");
         hint.wordWrap = true;
+        try { hint.textInteractionFlags = Qt.NoTextInteraction; } // click-through
+        catch (e) { try { hint.textInteractionFlags = 0; } catch (e2) {} }
         addW(listLayout, hint);
       }
       // Expanding spacer widget packs rows to the top, SyncSketch-style.
@@ -1342,6 +1349,8 @@ function SyncNoteBeta() {
       } else {
         var deadHead = new QLabel("(not exposed on timeline)  •  Sub " + drawingName);
         deadHead.styleSheet = "color: gray;";
+        try { deadHead.textInteractionFlags = Qt.NoTextInteraction; } // click-through
+        catch (e) { try { deadHead.textInteractionFlags = 0; } catch (e2) {} }
         addW(headRow, deadHead, 1);
       }
       if (notes.length === 0) {
@@ -2039,7 +2048,11 @@ function SyncNoteBeta() {
           // beta.4 diagnostics: log the pipeline so a dead click shows
           // WHERE it died (no press = event never delivered; press but no
           // release = release eaten; guard lines = skipped on purpose).
-          var who = (watched === host) ? "host" : "dlg";
+          var who = (watched === host) ? "host"
+                  : (watched === statusLbl) ? "status"
+                  : (watched === bottomW) ? "bottom strip"
+                  : (watched === toolbarW) ? "toolbar"
+                  : "dlg";
           if (t === prs) { trace("auto click: press on " + who); return false; }
           if (t !== rel) return false;
           try {
@@ -2067,6 +2080,13 @@ function SyncNoteBeta() {
       };
       host.installEventFilter(autoF);
       try { dlg.installEventFilter(autoF); } catch (e9) {}
+      // §38's lesson applied forward (beta.5): widgets that might swallow
+      // unclaimed clicks get the filter DIRECTLY — it never consumes, so
+      // arming broadly is free. (Deliberately NOT on card widgets: their
+      // jump filters would race this one on the same release.)
+      try { toolbarW.installEventFilter(autoF); } catch (e9a) {}
+      try { bottomW.installEventFilter(autoF); } catch (e9b) {}
+      try { statusLbl.installEventFilter(autoF); } catch (e9c) {}
       g_snKeepAlivePanel.push(autoF);
     } catch (e) {
       trace("auto mode: click filter unavailable (" + e + ") — Add Note " +
