@@ -42,7 +42,7 @@ function SyncNoteBeta() {
   // ---------------------------------------------------------------------
   // Constants
   // ---------------------------------------------------------------------
-  var SN_VERSION    = "0.34.0-beta.6";   // AUTO MODE BETA (2026-07-26)
+  var SN_VERSION    = "0.34.0-beta.7";   // AUTO MODE BETA (2026-07-26)
   // Teachers' update channel: the GitHub release branch (public repo).
   // main = development; release only receives Zack-blessed versions.
   var SN_UPDATE_URL = "https://raw.githubusercontent.com/makermatic/SyncNote/release/SyncNote.js";
@@ -1062,29 +1062,48 @@ function SyncNoteBeta() {
         modeLbl.text =
           '<span style="color: gray; font-size: 10px;">Mode: </span>' +
           '<a href="#" style="' + LINK_STYLE + ' font-size: 10px;">' +
-          (snMode === "auto" ? "Auto" : "Manual") + '</a>' +
-          '<span style="color: gray; font-size: 10px;">  •  </span>';
+          (snMode === "auto" ? "Auto" : "Manual") + '</a>';
       } catch (e) {}
     }
 
-    // statusPrefix is reused by the updater (v0.30.0): when a newer release
-    // exists, the version segment becomes a clickable "New Update Available".
-    var statusPrefix =
-      nb("Layer: " + layer.node) + "  •  " + nb("element #" + layer.elementId) +
-      "  •  " + nb(notesPortInfo(layer.node)) + "  •  ";
-    var statusLbl = new QLabel(statusPrefix + nb("v" + SN_VERSION));
-    statusLbl.styleSheet = "color: gray; font-size: 10px;";
-    statusLbl.wordWrap = true;
-    // Click-transparent (beta.5): a QLabel can swallow clicks it does
-    // nothing with (the §38 family) — this one made most of the bottom
-    // strip add-deaf in Auto Mode. Nothing lost: it was never selectable.
-    try { statusLbl.textInteractionFlags = Qt.NoTextInteraction; }
-    catch (e) { try { statusLbl.textInteractionFlags = 0; } catch (e2) {} }
-    // Compressible: without an explicit minimum, this label's size hint
-    // forced the whole WINDOW wider (v0.19.1 regression). Now it wraps to
-    // a second line on the left instead of stretching the row.
-    statusLbl.minimumWidth = 1;
-    addW(bottom, statusLbl, 1);
+    // Bottom strip, decluttered (beta.7, user design): the Layer/element/
+    // port debug readout lives behind the ⓘ button now; the strip keeps
+    // only Mode + version + buttons. The stretch spacer soaks up the gap
+    // — and, being click-transparent, stays part of the Auto add-surface.
+    var stretchW = new QWidget();
+    addW(bottom, stretchW, 1);
+    var verLbl = new QLabel(nb("v" + SN_VERSION));
+    verLbl.styleSheet = "color: gray; font-size: 10px;";
+    try { verLbl.textInteractionFlags = Qt.NoTextInteraction; } // click-through
+    catch (e) { try { verLbl.textInteractionFlags = 0; } catch (e2) {} }
+    addW(bottom, verLbl);
+    var infoBtn = new QPushButton("ⓘ");
+    infoBtn.toolTip = "Layer, element, and port details";
+    infoBtn.minimumWidth = 28;  // card-button size: present, not shouting
+    infoBtn.maximumWidth = 28;
+    infoBtn.minimumHeight = 20;
+    infoBtn.maximumHeight = 20;
+    infoBtn.clicked.connect(function () {
+      var d = new QDialog(dlg);
+      d.setWindowTitle("SyncNote Info");
+      d.minimumWidth = 300;
+      var v = new QVBoxLayout(d);
+      // Port info recomputed at click time, so a reconnect between opens
+      // shows current truth, not launch-time truth.
+      var lbl = new QLabel(
+        "Layer:  " + layer.node + "\n" +
+        "Element:  #" + layer.elementId + "\n" +
+        "Port:  " + notesPortInfo(layer.node) + "\n" +
+        "Version:  v" + SN_VERSION);
+      lbl.wordWrap = true;
+      try { lbl.textInteractionFlags = Qt.TextSelectableByMouse; } catch (e) {}
+      addW(v, lbl);
+      var closeBtn = new QPushButton("Close");
+      closeBtn.clicked.connect(function () { d.accept(); });
+      addW(v, closeBtn);
+      d.exec();
+    });
+    addW(bottom, infoBtn);
     var copyBtn = new QPushButton("Copy All");
     copyBtn.toolTip = "Copy every note as plain text — paste into any app";
     // Static label, no width pin (v0.20.1): on this engine pins only take
@@ -2089,7 +2108,8 @@ function SyncNoteBeta() {
           // WHERE it died (no press = event never delivered; press but no
           // release = release eaten; guard lines = skipped on purpose).
           var who = (watched === host) ? "host"
-                  : (watched === statusLbl) ? "status"
+                  : (watched === verLbl) ? "version"
+                  : (watched === stretchW) ? "strip gap"
                   : (watched === bottomW) ? "bottom strip"
                   : (watched === toolbarW) ? "toolbar"
                   : "dlg";
@@ -2121,7 +2141,8 @@ function SyncNoteBeta() {
       // jump filters would race this one on the same release.)
       try { toolbarW.installEventFilter(autoF); } catch (e9a) {}
       try { bottomW.installEventFilter(autoF); } catch (e9b) {}
-      try { statusLbl.installEventFilter(autoF); } catch (e9c) {}
+      try { verLbl.installEventFilter(autoF); } catch (e9c) {}
+      try { stretchW.installEventFilter(autoF); } catch (e9d) {}
       g_snKeepAlivePanel.push(autoF);
     } catch (e) {
       trace("auto mode: click filter unavailable (" + e + ") — Add Note " +
